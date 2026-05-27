@@ -1,0 +1,125 @@
+[
+  [
+    "user",
+    [
+      {
+        "type": "text",
+        "data": {
+          "text": "？"
+        }
+      }
+    ]
+  ],
+  [
+    "user",
+    [
+      {
+        "type": "face",
+        "data": {
+          "id": "427",
+          "raw": {
+            "faceIndex": 427,
+            "faceText": "/偷感",
+            "faceType": 2,
+            "packId": null,
+            "stickerId": null,
+            "sourceType": null,
+            "stickerType": null,
+            "resultId": null,
+            "surpriseId": null,
+            "randomType": null,
+            "imageType": null,
+            "pokeType": null,
+            "spokeSummary": null,
+            "doubleHit": null,
+            "vaspokeId": null,
+            "vaspokeName": null,
+            "vaspokeMinver": null,
+            "pokeStrength": null,
+            "msgType": null,
+            "faceBubbleCount": null,
+            "oldVersionStr": null,
+            "pokeFlag": null,
+            "chainCount": null
+          },
+          "resultId": null,
+          "chainCount": null
+        }
+      }
+    ]
+  ],
+  [
+    "user",
+    [
+      {
+        "type": "image",
+        "data": {
+          "summary": "[动画表情]",
+          "file": "880408DE408F74D8E5D0A7EC474B62DF.jpg",
+          "sub_type": 1,
+          "url": "https://multimedia.nt.qq.com.cn/download?appid=1406&fileid=EhRPh9utYedN_KGMFJgcYPIOcI0lxhj_8Acg_goomaO8oP7OlAMyBHByb2RQgM6JHloQhtJDXVDa79NPoG3aP2RHfnoCCXyCAQJneg&rkey=CAISMF9PDcqkDVwgrH3p48tcNkLKT8aERQZgieOfCtEoExr9TBi0AoZoZbQvIPtSVww8hA",
+          "file_size": "129151"
+        }
+      }
+    ]
+  ],
+  [
+    "user",
+    [
+      {
+        "type": "image",
+        "data": {
+          "summary": "",
+          "file": "3422DDA837F0246D0B6E35435E298250.png",
+          "sub_type": 0,
+          "url": "https://multimedia.nt.qq.com.cn/download?appid=1406&fileid=EhTzr8T_wym_iYTEDw869iIshaHcVRj55hkg_goon_y10v7OlAMyBHByb2RQgM6JHloQ1Q1pwEqEnDC7M67aZdSHTXoC31iCAQJneg&rkey=CAISMF9PDcqkDVwgrH3p48tcNkLKT8aERQZgieOfCtEoExr9TBi0AoZoZbQvIPtSVww8hA",
+          "file_size": "422777"
+        }
+      }
+    ]
+  ],
+  [
+    "user",
+    [
+      {
+        "type": "text",
+        "data": {
+          "text": "？"
+        }
+      }
+    ]
+  ],
+  [
+    "user",
+    [
+      {
+        "type": "text",
+        "data": {
+          "text": "？"
+        }
+      }
+    ]
+  ],
+  [
+    "user",
+    [
+      {
+        "type": "text",
+        "data": {
+          "text": "？？？"
+        }
+      }
+    ]
+  ],
+  [
+    "user",
+    [
+      {
+        "type": "text",
+        "data": {
+          "text": "接口有什么问题"
+        }
+      }
+    ]
+  ]
+]
