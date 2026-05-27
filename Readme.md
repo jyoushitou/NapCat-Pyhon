@@ -26,7 +26,7 @@ PS人设可以自己根据需求更改
 
 - 图片表情包存档：
 
--所有用户发送的图片都会以 MD5 哈希命名保存到 sticker_archive/ 目录。
+- 所有用户发送的图片都会以 MD5 哈希命名保存到 sticker_archive/ 目录。
 
 - 每个用户最多保留 30 张最近发送的图片，用于个性化表情包推荐。
 
@@ -77,7 +77,7 @@ PS人设可以自己根据需求更改
 - OCR 功能依赖 PIL 和 pytesseract，若未安装则自动禁用图片分析，仅作普通图片存档。
 
 9. 启动流程
-加载记忆文件（user_memory.json、global_keywords.json）
+- 加载记忆文件（user_memory.json、global_keywords.json）
 
 - 初始化表情包存档目录，加载图片索引（sticker_archive/sticker_index.json）
 
