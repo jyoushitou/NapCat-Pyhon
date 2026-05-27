@@ -76,7 +76,6 @@ PS人设可以自己根据需求更改
 
 - OCR 功能依赖 PIL 和 pytesseract，若未安装则自动禁用图片分析，仅作普通图片存档。
 
-- 
 9. 启动流程
 加载记忆文件（user_memory.json、global_keywords.json）
 
