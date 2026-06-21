@@ -1,14 +1,22 @@
 # 简介
 基于NapCat的QQ收发，python作为后端，调用的deepseek网络API，豆包的网络API作为保底的QQ聊天机器人，同时使用Tesseract作为图片识别的工具
-# 下载botv3.py启动
+# 下载 botv4.py 启动
 # 功能
+
+## 0. MySQL 数据库存储（v4 新增）
+- 使用 MySQL 替代原有的 JSON 文件存储 + txt 日志 + 环境变量密钥。
+- 数据库共 4 张表：`logs`、`api_keys`、`global_keywords`、`user_memory`。
+- 数据库默认连接 `192.168.0.50:3306`，数据库 `TomoriNaoBotData`，用户 `TomoriNaoBot`。
+- 日志、对话记忆、全局关键词、API 密钥全部从数据库读写，重启后自动从 MySQL 加载。
+- 表情包存档（图片文件 + JSON 索引）仍保留本地文件存储（`sticker_archive/` 目录）。
+
 ## 1. 多轮对话记忆系统
 - 私聊/群聊独立记忆：对每个用户（私聊）和每个群（群聊）分别维护最近 MAX_USER_ROUND（15）条对话记录，形成独立上下文。
 - 全局关键词记忆：从所有对话中提取高频词，长期保存（最多 40 个），用于丰富人设提示词。
-- 记忆持久化：对话历史和关键词定期保存到本地 JSON 文件，重启后自动加载。
+- 记忆持久化：对话历史和关键词保存到 **MySQL 数据库**，重启后自动加载。
 ## 2. 双模型兜底回复
-- 主模型：DeepSeek V4 Flash（需 DS_API_KEY），超时 60 秒，支持重试 3 次。
-- 备用模型：豆包（需 ARK_API_KEY），当 DeepSeek 失败时自动切换。
+- 主模型：DeepSeek V4 Flash（需 `api_keys` 表中 `DS_API_KEY`），超时 60 秒，支持重试 3 次。
+- 备用模型：豆包（需 `api_keys` 表中 `ARK_API_KEY`），当 DeepSeek 失败时自动切换。
 
 - 本地话术：当两个模型都不可用时，随机返回预设的傲娇回复。
 
@@ -54,40 +62,75 @@ PS人设可以自己根据需求更改
 - 若 ping 失败，自动清空连接状态，等待重连。
 
 ## 7. 日志与容错
-- 控制台 + 文件日志：所有接收、发送、接口调用、异常信息都同时输出到控制台和 logs/bot_log_YYYY-MM-DD.txt 文件。
+- 控制台 + **MySQL 数据库**日志：所有接收、发送、接口调用、异常信息都同时输出到控制台和数据库 `logs` 表（不再写入本地 txt 文件）。
 
 - 消息去重：使用 PROCESSED_MSG_IDS（最多 80 条）缓存已处理的消息 ID，避免重复响应。
 
 - 网络容错：图片下载、模型请求均带重试机制；API 密钥缺失时自动降级。
 
-# 8. 依赖与环境变量
-- 需要配置环境变量：
+# 8. 依赖与环境
 
-- DS_API_KEY：你的DeepSeek API 密钥
+## 数据库
+- 需要提前创建 MySQL 数据库 `TomoriNaoBotData` 以及以下 4 张表：
 
-- ARK_API_KEY：你的豆包 API 密钥
+```sql
+CREATE TABLE logs (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    level VARCHAR(10) NOT NULL,
+    message TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
-- STICKER_API_KEY（可选）：外部表情包搜索接口（代码中为示例地址，实际需替换）
+CREATE TABLE api_keys (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    key_name VARCHAR(50) NOT NULL UNIQUE,
+    key_value VARCHAR(255) NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
 
-- 需安装tesseract
+INSERT INTO api_keys (key_name, key_value) VALUES ('DS_API_KEY', 'your_deepseek_key');
+INSERT INTO api_keys (key_name, key_value) VALUES ('ARK_API_KEY', 'your_doubao_key');
+INSERT INTO api_keys (key_name, key_value) VALUES ('STICKER_API_KEY', 'your_sticker_api_key');
 
-- 必要的库可以使用如下命令
-- pip install websockets requests urllib3 jieba Pillow pytesseract
+CREATE TABLE global_keywords (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    keyword VARCHAR(50) NOT NULL UNIQUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
+CREATE TABLE user_memory (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    target_id VARCHAR(50) NOT NULL,
+    user_msg TEXT NOT NULL,
+    bot_msg TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_target_id (target_id)
+);
+```
+
+## Python 依赖
+- 必要的库可以使用如下命令安装：
+```
+pip install websockets requests urllib3 jieba Pillow pytesseract pymysql
+```
 - OCR 功能依赖 PIL 和 pytesseract，若未安装则自动禁用图片分析，仅作普通图片存档。
+- 需安装 Tesseract OCR 引擎（系统级，非 Python 包）。
 
-9. 启动流程
-- 加载记忆文件（user_memory.json、global_keywords.json）
+## NapCat 配置
+- 需要前往 NapCat 的网络配置，配置 WebSocket 客户端的程序地址（如 `ws://127.0.0.1:3001`）。
 
-- 初始化表情包存档目录，加载图片索引（sticker_archive/sticker_index.json）
-
-- 需要去NapCat的网络配置，配置websocket客户端的程序
-
-- 启动 websocket 服务（监听 0.0.0.0:3001），等待 QQ 客户端（如 go-cqhttp）连接
-
-- 同时启动心跳监控和定时任务协程
-
-- 连接成功后向主人发送上线提示
+# 9. 启动流程
+1. 确保 MySQL 数据库已创建且表结构正确。
+2. 在 `api_keys` 表中插入你的 DeepSeek 和豆包 API 密钥。
+3. 启动 NapCat 或兼容的 QQ 客户端。
+4. 运行 `python botv4.py`。
+5. 程序启动时自动：
+   - 从 MySQL 加载对话记忆和全局关键词。
+   - 初始化表情包存档目录，加载图片索引（`sticker_archive/sticker_index.json`）。
+   - 从 MySQL 加载 API 密钥。
+   - 启动 WebSocket 服务（监听 `0.0.0.0:3001`），等待 QQ 客户端连接。
+   - 同时启动心跳监控和定时任务协程。
+   - 连接成功后向主人发送上线提示。
 
 # 写在最后
-- 目前该程序已经在联想小新air14 2018（intel 8250U+MX150+16G）上成功运行
+- 目前该程序已经在联想小新 Air14 2018（Intel 8250U + MX150 + 16G）上成功运行。
