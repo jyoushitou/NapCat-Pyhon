@@ -87,7 +87,7 @@ def create_http_session():
     s=requests.Session(); s.mount("https://",HTTPAdapter(max_retries=0)); s.mount("http://",HTTPAdapter(max_retries=0)); return s
 
 # ===================== 5. 配置 =====================
-MASTER_QQ=822891053; LISTEN_HOST="0.0.0.0"; LISTEN_PORT_QQ=3001; LISTEN_PORT_WX=3002
+MASTER_QQ=822891053; LISTEN_HOST="0.0.0.0"; LISTEN_PORT_QQ=3001
 HEARTBEAT_INTERVAL=15; API_RETRY_DELAY=1.5; MAX_RETRY_TIMES=3
 PROCESSED_MSG_IDS=deque(maxlen=80); PROCESS_LOCK=None; LOCK_RELEASE_DELAY=0.8
 DS_API_KEY=DOUBAO_API_KEY=SEARCH_STICKER_KEY=""
@@ -271,7 +271,7 @@ def get_system_prompt():
 
 # ===================== 9. 全局变量 =====================
 user_memory_pool={}; global_keyword_set=set()
-active_ws_qq=None; active_ws_wx=None
+active_ws_qq=None
 active_ws_lock=asyncio.Lock()
 daily_trigger=set(); today=date.today()
 daily_chat_trigger_times=[]; triggered_today=set()
@@ -603,74 +603,6 @@ async def websocket_handle_qq(ws):
             if active_ws_qq is ws: active_ws_qq=None
         PROCESSED_MSG_IDS.clear(); log_system("QQ断开")
 
-# ===================== 17b. 微信消息处理(OpenClaw-WeChat) =====================
-WX_PROCESSED_MSG_IDS=deque(maxlen=80)
-
-async def websocket_handle_wx(ws):
-    """OpenClaw-WeChat 独立接入，共享同一套记忆/关键词/人设/表情包"""
-    global active_ws_wx
-    async with active_ws_lock:
-        if active_ws_wx and not getattr(active_ws_wx,"closed",False): await ws.close(); return
-        active_ws_wx=ws
-    log_system("微信上线")
-    try:
-        while True:
-            raw=await ws.recv()
-            rs=raw.decode("utf-8","ignore") if isinstance(raw,bytes) else raw
-            d=json.loads(rs)
-            # —— OpenClaw-WeChat 消息格式 ——
-            msg_type=d.get("Type") or d.get("type",0)
-            content=d.get("Content") or d.get("content","")
-            from_user=d.get("FromUser") or d.get("from","")
-            from_group=d.get("FromGroup") or d.get("roomid","")
-            msg_id=d.get("MsgId") or d.get("id","")
-            is_group=bool(from_group)
-            if not msg_id or msg_id in WX_PROCESSED_MSG_IDS: continue
-            if not content: continue
-            WX_PROCESSED_MSG_IDS.append(msg_id)
-            log_recv(f"[微信]{from_user}:{content}")
-            tid = from_group if is_group else from_user
-            ck=extract_keywords(content)
-            if contains_sticker_key(content):
-                # 微信搜表情包
-                s=search_cute_sticker_from_web(ck) or select_best_sticker_by_tags(ck,from_user)
-                if s:
-                    b64="base64://"+base64.b64encode(s).decode()
-                    wx_reply = {"Type": 3, "Content": b64, "ToUser": from_user}
-                    if is_group: wx_reply["ToGroup"] = from_group
-                    try:
-                        await ws.send(json.dumps(wx_reply, ensure_ascii=False))
-                        log_send(f"微信表情包")
-                    except Exception as e: log_err(f"微信发图失败:{e}")
-                    continue
-            ans=await get_character_reply(content,tid,ck)
-            add_target_memory(tid,content,ans)
-            # 组装回复：对话+动作+表情包
-            lines=[l.strip() for l in ans.split('\n') if l.strip()]
-            txt=lines[0] if lines else ans
-            action=lines[1] if len(lines)>1 and (lines[1].startswith('（') or lines[1].startswith('(')) else ""
-            msg_parts = txt
-            if action: msg_parts += "\n" + action
-            # 加上表情包图片
-            img=search_cute_sticker_from_web(ck) or select_best_sticker_by_tags(ck,from_user)
-            wx_reply = {"Type": 1, "Content": msg_parts, "ToUser": from_user}
-            if is_group: wx_reply["ToGroup"] = from_group
-            # 如果有表情包图，Type=3 发图后再发文字
-            try:
-                await ws.send(json.dumps(wx_reply, ensure_ascii=False))
-                log_send(f"微信:{ans[:30]}")
-                if img:
-                    b64="base64://"+base64.b64encode(img).decode()
-                    await ws.send(json.dumps({"Type": 3, "Content": b64, "ToUser": from_user}, ensure_ascii=False))
-            except Exception as e:
-                log_err(f"微信发消息失败:{e}")
-            await asyncio.sleep(LOCK_RELEASE_DELAY)
-    except Exception as e: log_err(f"微信异常:{e}")
-    finally:
-        async with active_ws_lock:
-            if active_ws_wx is ws: active_ws_wx=None
-        log_system("微信断开")
-
 # ===================== 18. 主程序 =====================
 async def main():
     global PROCESS_LOCK
@@ -679,16 +611,14 @@ async def main():
     log_system("初始化完成(CLIP识图版)")
     while True:
         hb=asyncio.create_task(heartbeat_monitor("QQ",active_ws_qq))
-        hb_wx=asyncio.create_task(heartbeat_monitor("微信",active_ws_wx))
         cyc=asyncio.create_task(cycle_task_run())
         try:
-            async with websockets.serve(websocket_handle_qq,LISTEN_HOST,LISTEN_PORT_QQ), \
-                       websockets.serve(websocket_handle_wx,LISTEN_HOST,LISTEN_ORT_WX):
+            async with websockets.serve(websocket_handle_qq,LISTEN_HOST,LISTEN_PORT_QQ):
                 await asyncio.Future()
         except Exception as e:
             log_err(f"重启:{e}")
         finally:
-            hb.cancel(); hb_wx.cancel(); cyc.cancel()
+            hb.cancel(); cyc.cancel()
             await asyncio.sleep(5)
 
 if __name__=="__main__": asyncio.run(main())
