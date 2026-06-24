@@ -16,7 +16,10 @@ import hashlib
 import re
 from io import BytesIO
 from collections import deque, defaultdict
-from datetime import datetime, time, date
+from datetime import datetime, time, date, timedelta, timezone
+
+# UTC+8 时区
+CST = timezone(timedelta(hours=8))
 import importlib.util
 from requests.adapters import HTTPAdapter
 import jieba
@@ -62,9 +65,10 @@ MAX_GLOBAL_KEY = 40
 def write_log_to_db(level: str, message: str):
     try:
         cursor = get_cursor()
+        now_cst = datetime.now(CST).strftime('%Y-%m-%d %H:%M:%S')
         cursor.execute(
-            "INSERT INTO logs (level, message) VALUES (%s, %s)",
-            (level, message)
+            "INSERT INTO logs (level, message, created_at) VALUES (%s, %s, %s)",
+            (level, message, now_cst)
         )
         cursor.connection.commit()
     except Exception:
