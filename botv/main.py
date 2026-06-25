@@ -15,6 +15,7 @@ from .personality import load_personality_supplement  # 加载人设补充
 from .heartbeat import heartbeat_monitor  # 心跳监控
 from .schedule import cycle_task_run, CHINESE_CALENDAR_OK  # 定时任务循环、农历日历状态
 from .handler import websocket_handle_qq  # WebSocket消息处理函数
+from .api_server import start_api_server  # HTTP API服务器
 
 
 async def main():
@@ -62,8 +63,16 @@ async def main():
     except Exception as e:
         log_err(f"升级ai_raw_responses表失败: {e}")
     
-    cfg.PROCESS_LOCK = asyncio.Lock()  # 初始化消息处理锁（防止并发处理同一条消息）
+        cfg.PROCESS_LOCK = asyncio.Lock()  # 初始化消息处理锁（防止并发处理同一条消息）
     log_system("初始化完成(CLIP识图版)")  # 日志记录初始化完成
+    
+    # ===================== 启动 API 服务器 =====================
+    try:
+        api_runner = await start_api_server()
+        log_system("API 服务器已启动")
+    except Exception as e:
+        log_err(f"API 服务器启动失败: {e}")
+        api_runner = None
     
     # ===================== 主循环 =====================
     while True:  # 无限循环，异常时自动重启
@@ -75,6 +84,11 @@ async def main():
         except Exception as e:  # 捕获异常
             log_err(f"重启:{e}")  # 日志记录异常并准备重启
         finally:
-            hb.cancel()  # 取消心跳任务
-            cyc.cancel()  # 取消定时任务
+                        hb.cancel()  # 取消心跳任务
+        cyc.cancel()  # 取消定时任务
+        if api_runner:
+            try:
+                await api_runner.cleanup()
+            except:
+                    pass
             await asyncio.sleep(5)  # 等待5秒后重启
