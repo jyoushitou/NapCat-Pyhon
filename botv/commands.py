@@ -1,4 +1,5 @@
-# ! 命令系统（仅主人可用）
+# ===================== 命令系统 =====================
+# 仅主人可用，通过 ! 前缀触发，支持查看状态/管理记忆/手动操作等
 import asyncio, os
 from datetime import date
 from .config import MASTER_QQ, LISTEN_HOST, LISTEN_PORT_QQ, HEARTBEAT_INTERVAL, DS_MODEL, STICKER_ARCHIVE_DIR, CLIP_IMAGE_TAGS
@@ -15,9 +16,10 @@ from .api import get_character_reply
 from datetime import datetime
 
 # 主人通过私聊发命令查看/修改运行时参数
-CMD_PREFIX = "!"
+CMD_PREFIX = "!"  # 命令前缀
 
 def build_cmd_help():
+    """构建帮助文本：列出所有可用命令及说明"""
     return (
         "📋 可用命令（私聊发送，仅主人有效）：\n"
         "!help          - 显示本帮助\n"
@@ -46,6 +48,7 @@ def build_cmd_help():
     )
 
 def format_status_detailed():
+    """格式化详细状态信息：配置、API、记忆、定时任务等"""
     lines = []
     lines.append(f"🤖 主人QQ: {MASTER_QQ}")
     lines.append(f"🔌 WebSocket: {LISTEN_HOST}:{LISTEN_PORT_QQ}")
@@ -367,3 +370,4 @@ async def handle_command(text, uid, ws, is_group, gid):
             await send_private_msg(uid, msg, ws)
         log_send(f"[命令回复] {reply[:50]}...")
     return True
+
