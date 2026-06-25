@@ -96,10 +96,12 @@ def check_all_dependencies():
 
 # ===================== 启动入口 =====================
 import asyncio
-from botv.main import main
 
 if __name__ == "__main__":
     # 先检查依赖
-    check_all_dependencies()
+    if not check_all_dependencies():
+        sys.exit(1)
+    # 依赖检查通过后再导入主模块
+    from botv.main import main
     # 启动机器人
     asyncio.run(main())

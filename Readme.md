@@ -66,6 +66,16 @@
 - **网络容错**：图片下载、模型请求均带重试机制；API 密钥缺失时自动降级。
 - **AI 原始返回保存**：每次模型调用结果（完整 JSON）存入 `ai_raw_responses` 表，便于调试。
 
+### 11. HTTP API 服务器（v6 新增 ⭐）
+- 基于 `aiohttp` 的异步 HTTP 服务器，监听端口 **60908**。
+- 所有接口需 **Bearer Token** 验证（纯英文+数字，自动生成并存入数据库）。
+- 支持 **20 个并发** 请求，所有响应统一 UTF-8 编码。
+- **对话接口** `POST /api/chat`：传入 `message` + `target_id`（QQ号），返回和 QQ 完全一致的 AI 回复，共享记忆系统。
+- **命令接口** `POST /api/command`：执行 `!` 命令并返回文本结果。
+- **状态接口** `GET /api/status`：查看机器人运行状态、数据库统计、运行时数据。
+- **健康检查** `GET /api/health`：无需 Token，供外部程序检测服务是否存活。
+- 完整接口列表：`GET /api/health`、`GET /api/status`、`GET /api/usage`、`GET /api/memory`、`GET /api/logs`、`GET /api/token`、`POST /api/chat`、`POST /api/command`。
+
 ### 10. 事件记忆系统
 - 从对话中提取重要事件（如"今天考试""明天出去玩"），存入 `events` 数据库表。
 - 在构建提示词时注入事件记忆，让 AI 记住用户的重要日程。
@@ -179,7 +189,7 @@ CREATE TABLE IF NOT EXISTS ai_raw_responses (
 ## Python 依赖
 
 ```bash
-pip install websockets requests urllib3 jieba Pillow pymysql chinesecalendar
+pip install websockets requests urllib3 jieba Pillow pymysql chinesecalendar aiohttp
 ```
 
 **CLIP 额外依赖（可选，不影响核心功能）：**
@@ -236,7 +246,8 @@ pip install git+https://github.com/openai/CLIP.git
 | `botv/schedule.py` | 定时任务 + 工作日判断 |
 | `botv/heartbeat.py` | WebSocket 心跳保活 |
 | `botv/handler.py` | QQ 消息处理主循环 |
-| `botv/main.py` | 主程序入口 |
+| `botv/api_server.py`         | HTTP API 服务器（端口 60908，供 C++ 调用） |
+| `botv/main.py`               | 主程序入口 |
 
 ---
 
