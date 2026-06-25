@@ -96,10 +96,42 @@ async def cycle_task_run():
                 cfg.triggered_today.clear()
                 cfg.task_trigger_minute.clear()
                 cfg.today = today
-                # 计算当日闲聊触发时刻（随机2~4次，12:00~18:00）
-                cfg.daily_chat_trigger_times = random.sample(range(720, 1080), random.randint(2, 4))
-                # 计算当日所有任务触发时刻
+                # 先计算当日所有任务触发时刻（后面闲聊要避开这些时间）
                 cfg.task_trigger_minute.update(_calc_day_tasks(today, _is_workday))
+
+                # ===== 所有主动消息（定时任务+闲聊）合并排序，确保间隔至少1小时 =====
+                # 1. 先收集所有定时任务的触发分钟
+                all_active_minutes = set()
+                for key, tm in cfg.task_trigger_minute.items():
+                    if 480 <= tm <= 1380:  # 只保留你醒着的时间段 8:00~23:00
+                        all_active_minutes.add(tm)
+                
+                # 2. 生成随机闲聊触发时间点（2~4次），确保与定时任务间隔 >= 60分钟
+                chat_count = random.randint(2, 4)
+                available_minutes = list(range(480, 1381))  # 8:00~23:00
+                # 移除定时任务前后60分钟的时间点
+                for tm in all_active_minutes:
+                    remove_start = max(480, tm - 60)
+                    remove_end = min(1380, tm + 60)
+                    available_minutes = [m for m in available_minutes if m < remove_start or m > remove_end]
+                
+                chat_times = []
+                for _ in range(chat_count):
+                    if not available_minutes:
+                        break
+                    chosen = random.choice(available_minutes)
+                    chat_times.append(chosen)
+                    # 移除 chosen 前后60分钟内的所有时间点，确保闲聊之间也间隔
+                    remove_start = max(480, chosen - 60)
+                    remove_end = min(1380, chosen + 60)
+                    available_minutes = [m for m in available_minutes if m < remove_start or m > remove_end]
+                
+                cfg.daily_chat_trigger_times = sorted(chat_times)
+                
+                # 3. 合并所有主动消息时间点并排序，用于间隔检查
+                all_active = sorted(set(list(all_active_minutes) + cfg.daily_chat_trigger_times))
+                log_system(f"所有主动消息时间点: {[f'{m//60:02d}:{m%60:02d}' for m in all_active]}")
+                log_system(f"其中主动闲聊: {[f'{m//60:02d}:{m%60:02d}' for m in cfg.daily_chat_trigger_times]}")
                 _last_today = today
                 log_system(f"定时任务初始化完成，共 {len(cfg.task_trigger_minute)} 个任务点")
 
@@ -178,13 +210,42 @@ async def cycle_task_run():
                 cfg.daily_trigger.add(key)
                 log_system(f"定时:{task['scene']}")
 
-            # ---------- 闲聊触发 ----------
+            # ---------- 主动闲聊触发（用之前存储的事件作为话题，更自然） ----------
             if (cur_minute in cfg.daily_chat_trigger_times and
                     cur_minute not in cfg.triggered_today):
                 cfg.triggered_today.add(cur_minute)
-                rep = await get_character_reply("闲聊", str(MASTER_QQ))
+                # 从数据库加载最近的事件作为话题
+                from .db import load_events_from_db
+                recent_events = load_events_from_db(str(MASTER_QQ), limit=5)
+                if recent_events:
+                    # 随机选一个事件作为话题，自然地提起
+                    chosen_event = random.choice(recent_events)[0]
+                    topic = random.choice([
+                        f"突然想起来之前{chosen_event}",
+                        f"对了，之前{chosen_event}，现在怎么样了",
+                        f"诶，说到{chosen_event}，突然有点感慨",
+                        f"刚刚想到{chosen_event}，有点好奇后续",
+                        f"话说回来，之前{chosen_event}，你还记得吗",
+                    ])
+                    log_system(f"主动闲聊触发（基于事件: {chosen_event}）")
+                else:
+                    # 没有事件时用自然话题
+                    topic = random.choice([
+                        "好无聊啊",
+                        "你在干嘛呢",
+                        "今天天气不错",
+                        "突然想找你聊天",
+                        "喂，有空吗",
+                        "刚刚看到个有趣的东西",
+                        "今天心情怎么样",
+                        "哼，我有点无聊",
+                        "你猜我现在在想什么",
+                        "今天有什么好玩的事吗",
+                    ])
+                    log_system(f"主动闲聊触发（无事件，用随机话题: {topic}）")
+                rep = await get_character_reply(topic, str(MASTER_QQ))
                 await send_short_reply(MASTER_QQ, rep, cfg.active_ws_qq, MASTER_QQ)
-                log_system("闲聊触发")
+                log_system(f"主动闲聊触发完成")
 
         except Exception as e:
             log_err(f"定时异常:{e}")

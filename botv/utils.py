@@ -32,10 +32,11 @@ def encode_image_base64(d):
 
 def make_image_msg(filepath):
     """统一将本地图片路径转为 NapCat 图片消息体
-    返回 [{"type":"image","data":{"file":"相对路径"}}] 或 None"""
+    返回 [{"type":"image","data":{"file":"绝对路径"}}] 或 None"""
     if not filepath or not os.path.exists(filepath):
         return None
-    return [{"type":"image","data":{"file":filepath}}]
+    abs_path = os.path.abspath(filepath)  # 转为绝对路径
+    return [{"type":"image","data":{"file":abs_path}}]
 
 def parse_ai_reply(ans):
     """解析AI回复的五行格式

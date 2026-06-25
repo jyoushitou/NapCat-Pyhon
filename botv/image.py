@@ -15,9 +15,10 @@ from .utils import download_url, create_http_session, encode_image_base64  # 工
 
 
 def image_local_path(md5_hash, ext="jpg"):
-    """根据MD5和扩展名生成图片本地路径"""
+    """根据MD5和扩展名生成图片本地绝对路径"""
     os.makedirs(IMAGE_DIR, exist_ok=True)  # 确保图片目录存在
-    return os.path.join(IMAGE_DIR, f"{md5_hash}.{ext}")  # 返回 images/md5.ext 路径
+    rel = os.path.join(IMAGE_DIR, f"{md5_hash}.{ext}")  # 相对路径
+    return os.path.abspath(rel)  # 转为绝对路径
 
 
 def save_image_to_db(md5_hash, img_data, tags, source_url="", uid=""):

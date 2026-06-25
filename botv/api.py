@@ -126,6 +126,7 @@ async def call_doubao(msgs):
 
 from .memory import build_memory_context  # 构建对话上下文
 from .personality import get_system_prompt  # 获取系统提示词
+from .utils import parse_ai_reply  # 解析AI回复
 
 
 async def get_character_reply(txt, tid, current_kws=None):
@@ -134,7 +135,8 @@ async def get_character_reply(txt, tid, current_kws=None):
     kw, dia, events = build_memory_context(tid, current_kws)  # 构建对话上下文（关键词、对话历史、事件）
     log_api(f"[get_character_reply] 记忆: kw_len={len(kw)}, dia_len={len(dia)}, events={events[:40]}")  # 日志记录上下文信息
     cur_kw_str = "、".join(current_kws) if current_kws else "无"  # 当前话题关键词（顿号分隔）
-    sys_p = get_system_prompt().format(global_keywords=kw, current_dialogue=dia, events=events)  # 格式化系统提示词
+    from .config import MASTER_QQ
+    sys_p = get_system_prompt().format(global_keywords=kw, current_dialogue=dia, events=events, master_qq=MASTER_QQ)  # 格式化系统提示词
     log_api(f"[get_character_reply] system_prompt长度: {len(sys_p)}")  # 日志记录提示词长度
     user_content = f"{txt}\n(当前话题关键词:{cur_kw_str})"  # 构建用户消息（追加当前话题关键词）
     msgs = [{"role":"system","content":sys_p}, {"role":"user","content":user_content}]  # 构建消息列表
@@ -142,5 +144,22 @@ async def get_character_reply(txt, tid, current_kws=None):
     if not r:  # DeepSeek无回复
         log_api("[get_character_reply] DeepSeek无回复，转豆包")  # 日志记录降级
         r = await call_doubao(msgs)  # 降级到豆包
+    
+    # ===== 修复：AI回复缺少图片关键词行时，自动从对话内容提取关键词兜底 =====
+    if r:
+        dialog, action, img_kw, event, refined_kw = parse_ai_reply(r)
+        if not img_kw:
+            # 从对话内容中提取关键词作为图片搜索关键词
+            from .memory import extract_keywords
+            fallback_kws = extract_keywords(dialog)
+            if fallback_kws:
+                # 限制最多10个关键词
+                fallback_kws = fallback_kws[:10]
+                # 在回复末尾追加图片关键词行
+                r = r.strip() + f"\n关键词搜索图片用：{'、'.join(fallback_kws)}"
+                log_api(f"[get_character_reply] 自动补充图片关键词: {fallback_kws}")
+            else:
+                log_api("[get_character_reply] 无法提取图片关键词，保持原回复")
+    
     log_api(f"[get_character_reply] 最终回复: {r[:60] if r else 'None'}")  # 日志记录最终回复
     return r  # 返回回复文本

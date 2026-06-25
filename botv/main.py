@@ -21,34 +21,34 @@ from .api_server import start_api_server  # HTTP API服务器
 async def main():
     """主函数：初始化各模块，启动WebSocket服务器，异常时自动重启"""
     # ===================== 初始化各模块 =====================
-    load_memories()  # 从数据库加载对话记忆和全局关键词
-    init_sticker_archive()  # 初始化旧表情包存档（迁移到新库）
-    init_clip_model()  # 加载CLIP视觉模型（CPU模式）
-    reload_api_keys()  # 从数据库重新加载API密钥
-    load_personality_supplement()  # 从远程URL加载人设补充
+    load_memories()
+    init_sticker_archive()
+    init_clip_model()
+    reload_api_keys()
+    load_personality_supplement()
     
-    # 确保 ACG 图片表存在（兼容旧版）
+    # 确保 ACG 图片表存在
     try:
-        c = get_cursor()  # 获取数据库游标
+        c = get_cursor()
         c.execute("""
-            CREATE TABLE IF NOT EXISTS acg_images (  # 创建ACG图片表（如果不存在）
-                id INT AUTO_INCREMENT PRIMARY KEY,  # 自增主键
-                md5_hash VARCHAR(32) NOT NULL UNIQUE,  # MD5哈希（唯一）
-                image_data MEDIUMBLOB,  # 图片二进制数据
-                tags VARCHAR(255) DEFAULT '',  # 标签
-                source_url VARCHAR(512) DEFAULT '',  # 来源URL
-                file_path VARCHAR(255) DEFAULT '',  # 本地文件路径
-                ext VARCHAR(10) DEFAULT 'jpg',  # 文件扩展名
-                use_count INT DEFAULT 0,  # 使用次数
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP  # 创建时间
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4  # InnoDB引擎，UTF8MB4编码
+            CREATE TABLE IF NOT EXISTS acg_images (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                md5_hash VARCHAR(32) NOT NULL UNIQUE,
+                image_data MEDIUMBLOB,
+                tags VARCHAR(255) DEFAULT '',
+                source_url VARCHAR(512) DEFAULT '',
+                file_path VARCHAR(255) DEFAULT '',
+                ext VARCHAR(10) DEFAULT 'jpg',
+                use_count INT DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
-        c.connection.commit()  # 提交事务
-        log_system("acg_images 表已就绪")  # 日志记录
+        c.connection.commit()
+        log_system("acg_images 表已就绪")
     except Exception as e:
-        log_err(f"建表失败: {e}")  # 建表失败记录错误
+        log_err(f"建表失败: {e}")
     
-        # 确保 ai_raw_responses 表有 token 用量字段（兼容旧表升级）
+    # 确保 ai_raw_responses 表有 token 用量字段
     try:
         c = get_cursor()
         c.execute("SHOW COLUMNS FROM ai_raw_responses LIKE 'prompt_tokens'")
@@ -63,8 +63,8 @@ async def main():
     except Exception as e:
         log_err(f"升级ai_raw_responses表失败: {e}")
     
-        cfg.PROCESS_LOCK = asyncio.Lock()  # 初始化消息处理锁（防止并发处理同一条消息）
-    log_system("初始化完成(CLIP识图版)")  # 日志记录初始化完成
+    cfg.PROCESS_LOCK = asyncio.Lock()  # 初始化消息处理锁
+    log_system("初始化完成(CLIP识图版)")
     
     # ===================== 启动 API 服务器 =====================
     try:
@@ -75,20 +75,20 @@ async def main():
         api_runner = None
     
     # ===================== 主循环 =====================
-    while True:  # 无限循环，异常时自动重启
-        hb = asyncio.create_task(heartbeat_monitor("QQ", cfg.active_ws_qq))  # 创建心跳监控任务
-        cyc = asyncio.create_task(cycle_task_run())  # 创建定时任务循环
+    while True:
+        hb = asyncio.create_task(heartbeat_monitor("QQ", cfg.active_ws_qq))
+        cyc = asyncio.create_task(cycle_task_run())
         try:
-            async with websockets.serve(websocket_handle_qq, LISTEN_HOST, LISTEN_PORT_QQ):  # 启动WebSocket服务器
-                await asyncio.Future()  # 保持运行直到被取消
-        except Exception as e:  # 捕获异常
-            log_err(f"重启:{e}")  # 日志记录异常并准备重启
+            async with websockets.serve(websocket_handle_qq, LISTEN_HOST, LISTEN_PORT_QQ):
+                await asyncio.Future()
+        except Exception as e:
+            log_err(f"重启:{e}")
         finally:
-                        hb.cancel()  # 取消心跳任务
-        cyc.cancel()  # 取消定时任务
-        if api_runner:
-            try:
-                await api_runner.cleanup()
-            except:
+            hb.cancel()
+            cyc.cancel()
+            if api_runner:
+                try:
+                    await api_runner.cleanup()
+                except:
                     pass
-            await asyncio.sleep(5)  # 等待5秒后重启
+            await asyncio.sleep(5)

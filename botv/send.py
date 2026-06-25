@@ -60,8 +60,9 @@ async def build_reply_message(txt, uid, kws=None):
         log_api(f"[构建回复] 按AI关键词搜图(20纬度): {img_kw}")  # 日志记录
         fp = await get_best_image(img_kw, uid)  # 按关键词搜图
         if fp:  # 搜到图片
-            log_api(f"[构建回复] 搜到图片: {fp}")  # 日志记录
-            parts.append(("image", [{"type":"image","data":{"file":fp}}]))  # 添加图片消息（相对路径）
+            abs_fp = os.path.abspath(fp)  # 转为绝对路径（NapCat需要绝对路径）
+            log_api(f"[构建回复] 搜到图片: {abs_fp}")  # 日志记录
+            parts.append(("image", [{"type":"image","data":{"file":abs_fp}}]))  # 添加图片消息
         else:  # 20纬度都搜不到
             log_api(f"[构建回复] 20纬度均未搜到图，启动1分钟延迟jieba兜底")  # 日志记录
             asyncio.create_task(_delayed_jieba_fallback(dialog, action, uid))  # 延迟1分钟用jieba兜底
@@ -79,8 +80,9 @@ async def _delayed_jieba_fallback(dialog, action, uid):
     if search_kws:  # 提取到关键词
         fp = await get_best_image(search_kws, uid)  # 按关键词搜图
         if fp:  # 搜到图片
-            log_api(f"[构建回复] jieba兜底搜到图片(延迟1min): {fp}")  # 日志记录
-            img_msg = [{"type":"image","data":{"file":fp}}]  # 构建图片消息（相对路径）
+            abs_fp = os.path.abspath(fp)  # 转为绝对路径（NapCat需要绝对路径）
+            log_api(f"[构建回复] jieba兜底搜到图片(延迟1min): {abs_fp}")  # 日志记录
+            img_msg = [{"type":"image","data":{"file":abs_fp}}]  # 构建图片消息
             ws = cfg.active_ws_qq  # 获取当前WebSocket连接
             if ws and not getattr(ws, "closed", False):  # 连接有效
                 try:

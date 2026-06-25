@@ -3,6 +3,7 @@
 
 import asyncio  # 异步IO
 import json  # JSON解析
+import os  # 文件路径操作
 
 from .config import MASTER_QQ, LOCK_RELEASE_DELAY  # 主人QQ、锁释放延迟
 import botv.config as cfg  # 全局运行时变量
@@ -75,10 +76,15 @@ async def websocket_handle_qq(ws):
     await send_short_reply(MASTER_QQ, "哼,上线了(叉腰)", ws, MASTER_QQ)  # 发送上线通知
     
     img_fp = await fetch_and_save_acg_image()  # 获取ACG图片
-    img_msg = make_image_msg(img_fp)  # 构建图片消息
-    if img_msg and not getattr(ws, "closed", False):  # 图片有效且连接未关闭
-        await send_private_msg(MASTER_QQ, img_msg, ws)  # 发送图片给主人
-        log_system("上线ACG图片已发送")  # 日志记录
+    if img_fp:
+        img_fp = os.path.abspath(img_fp)  # 转为绝对路径
+        log_api(f"[上线] ACG图片绝对路径: {img_fp}")  # 日志记录
+        img_msg = make_image_msg(img_fp)  # 构建图片消息
+        if img_msg and not getattr(ws, "closed", False):  # 图片有效且连接未关闭
+            await send_private_msg(MASTER_QQ, img_msg, ws)  # 发送图片给主人
+            log_system("上线ACG图片已发送")  # 日志记录
+    else:
+        log_api("[上线] ACG图片获取失败")  # 日志记录
     
     try:
         while True:  # 消息接收循环
