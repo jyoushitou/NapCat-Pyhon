@@ -29,31 +29,52 @@ LOCAL_SYSTEM_PROMPT = """你是友利奈绪(Charlotte)，15岁傲娇毒舌学生
 【事件记忆】：{events}
 """  # AI系统提示词模板，包含格式约束和动态变量
 
-# ===================== 人设补充URL =====================
+# ===================== 人设补充 =====================
+import os  # 文件路径操作
+
+# 本地人设补充文件路径（与当前文件同目录）
+LOCAL_SUPPLEMENT_FILE = os.path.join(os.path.dirname(__file__), "personality_supplement.txt")
+
+# 远程人设补充URL列表（可选，按需配置）
 PERSONALITY_SUPPLEMENT_URLS = [
-    "https://raw.githubusercontent.com/your-repo/nao_personality/main/base.txt",  # 远程人设补充文件
+    # "https://raw.githubusercontent.com/your-repo/nao_personality/main/base.txt",  # 示例：远程人设补充
 ]  # 在线拉取人设补充的URL列表
 
 PERSONALITY_SUPPLEMENT = ""  # 缓存远程拉取的人设补充文本
 
 
 def load_personality_supplement():
-    """从远程URL加载人设补充文本，失败时使用本地人设"""
+    """加载人设补充文本，优先级：远程URL > 本地文件"""
     global PERSONALITY_SUPPLEMENT  # 修改全局变量
+    
+    # 1. 尝试从远程URL加载
     for url in PERSONALITY_SUPPLEMENT_URLS:  # 遍历URL列表
         try:
             s = create_http_session()  # 创建HTTP会话
             r = s.get(url, timeout=(5, 10), verify=False)  # 5秒连接超时，10秒读取超时
             if r.status_code == 200 and r.text.strip():  # 请求成功且有内容
                 PERSONALITY_SUPPLEMENT = r.text.strip()  # 缓存补充文本
-                log_system(f"人设补充加载成功: {url}")  # 日志记录
+                log_system(f"人设补充加载成功（远程）: {url}")  # 日志记录
                 return  # 加载成功，直接返回
         except Exception as e:
-            log_api(f"人设补充加载失败 {url}: {e}")  # 加载失败记录
+            log_api(f"人设补充加载失败（远程） {url}: {e}")  # 加载失败记录
         finally:
             try: s.close()  # 关闭会话
             except: pass
-    log_system("人设补充未加载，使用本地人设")  # 所有URL都失败
+    
+    # 2. 尝试从本地文件加载
+    try:
+        if os.path.exists(LOCAL_SUPPLEMENT_FILE):
+            with open(LOCAL_SUPPLEMENT_FILE, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+            if content:
+                PERSONALITY_SUPPLEMENT = content
+                log_system(f"人设补充加载成功（本地）: {LOCAL_SUPPLEMENT_FILE}")
+                return
+    except Exception as e:
+        log_api(f"人设补充加载失败（本地）: {e}")
+    
+    log_system("人设补充未加载，使用基础人设")  # 所有方式都失败
 
 
 def get_system_prompt():
