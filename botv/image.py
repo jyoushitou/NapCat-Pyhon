@@ -1,6 +1,7 @@
 # 统一图片系统：下载→CLIP打标→本地存档→入库→按tag搜索复用
 import os, hashlib, asyncio, random
-from .config import STICKER_API_ALAPI_TOKEN, IMAGE_DIR, CLIP_IMAGE_TAGS
+from .config import IMAGE_DIR, CLIP_IMAGE_TAGS
+import botv.config as cfg
 from .db import get_cursor
 from .log import log_system, log_api, log_err
 from .clip import analyze_image_with_clip
@@ -109,7 +110,7 @@ async def fetch_and_save_acg_image():
     session = create_http_session()
     try:
         r = session.get("https://v3.alapi.cn/api/acg",
-                       params={"token": STICKER_API_ALAPI_TOKEN, "format": "json"},
+                       params={"token": cfg.STICKER_API_ALAPI_TOKEN, "format": "json"},
                        timeout=10, verify=False)
         if r.status_code == 200:
             data = r.json()
@@ -133,7 +134,7 @@ async def search_alapi_and_save(keywords):
     session = create_http_session()
     try:
         r = session.get("https://v3.alapi.cn/api/doutu",
-                       params={"token": STICKER_API_ALAPI_TOKEN, "keyword": kw},
+                       params={"token": cfg.STICKER_API_ALAPI_TOKEN, "keyword": kw},
                        timeout=10, verify=False)
         if r.status_code == 200:
             data = r.json()

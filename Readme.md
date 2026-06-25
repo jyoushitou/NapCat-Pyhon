@@ -8,10 +8,11 @@
 
 ### 0. MySQL 数据库存储
 - 使用 MySQL 替代 JSON 文件存储 + txt 日志 + 环境变量密钥。
-- 数据库共 4 张表：`logs`、`api_keys`、`global_keywords`、`user_memory`。
+- 数据库共 5 张表：`logs`、`api_keys`、`global_keywords`、`user_memory`、`images`。
 - 默认连接 `192.168.0.50:3306`，数据库 `TomoriNaoBotData`，用户 `TomoriNaoBot`。
 - 日志、对话记忆、全局关键词、API 密钥全部从数据库读写，重启后自动加载。
 - 表情包存档（图片文件 + JSON 索引）仍保留本地文件存储（`sticker_archive/` 目录）。
+- 新图片统一存入 `images/` 目录 + `images` 数据库表。
 
 ### 1. 多轮对话记忆系统
 - **私聊/群聊独立记忆**：对每个用户（私聊）和每个群（群聊）分别维护最近 **15 条** 对话记录，形成独立上下文。
@@ -25,32 +26,33 @@
 - **人设提示词**：固定为《Charlotte》友利奈绪（傲娇毒舌、外冷内热），动态注入全局关键词 + 当前对话历史 + 当前话题关键词。
 - **可选的在线人设补充**：支持从 URL 远程拉取人设补充文本。
 
-### 3. CLIP 本地识图打标 & 表情包存档（v5 新增 ⭐）
-- **OpenAI CLIP (ViT-B/32)** 运行在 CPU 上，对用户发送的图片进行本地识别，打标分类（如"二次元""熊猫头""沙雕图""可爱"等 40+ 候选标签）。
-- 所有图片以 **MD5 哈希** 命名保存到 `sticker_archive/` 目录，标签/描述存入 JSON 索引。
-- 每个用户最多保留 **30 张** 最近发送的图片，用于个性化表情包推荐。
-- 回复时根据上下文关键词，从用户自己的图片库或全局图片库中匹配最佳表情包（按标签得分排序）。
+### 3. CLIP 本地识图打标 & 统一图片系统（v5 新增 ⭐）
+- **OpenAI CLIP (ViT-B/32)** 运行在 CPU 上，对用户发送的图片进行本地识别，打标分类（如"二次元""沙雕图""可爱"等 40+ 候选标签）。
+- 所有图片以 **MD5 哈希** 命名保存到 `images/` 目录，标签、来源、使用次数存入 `images` 数据库表。
+- 回复时根据对话关键词，从数据库中按标签搜索匹配图片（按使用次数排序），优先返回高频图。
+- **ALAPI 在线搜图兜底**：本地无匹配时自动从 ALAPI 斗图/ACG 接口下载、打标、入库，后续可直接复用。
+- **旧 sticker_archive 兼容**：启动时自动将旧存档数据迁入新库。
 
-### 4. 网络搜表情包（ALAPI）
-- 当需要回复表情包时，优先从 **ALAPI 斗图** 接口在线搜索表情包（按对话关键词匹配）。
-- 搜索失败时降级到本地存档或内置 QQ 表情。
-
-### 5. 简短回复 + 动作描写
+### 4. 简短回复 + 动作描写
 - 模型回复限 **max_tokens=80**，保证回复简短精炼。
 - 支持 **两段式回复**：第一行对话内容，第二行动作描写（如 `（扭头）`）。
 - 动作行后自动附带匹配的表情包图片，无动作行时附带 QQ 表情。
 
-### 6. 定时任务 + 随机偏移
+### 5. 定时任务 + 随机偏移
 - **8 个预设场景**：催起床、周末吐槽赖床、提醒点外卖、叮嘱午睡、提醒起身、提醒晚餐、催睡觉、勒令睡觉。
 - **随机偏移 ±10 分钟**，避免机械感。
 - **智能起床时间**：使用 `chinesecalendar` 模块判断中国法定工作日/节假日，**工作日 7:30** 叫起床，**周末/法定节假日 8:30** 叫起床（国庆、春节等假期自动延后，调休上班日自动提前）。
-- **起床时附带 ACG 二次元图片**：调 ALAPI ACG 接口获取一张二次元图片，起床消息后直接发送，既是叫醒也是检验网络连通性。
+- **起床时附带 ACG 二次元图片**：调 ALAPI ACG 接口获取一张二次元图片，起床消息后直接发送。
 - **上线检测**：程序启动连接 QQ 成功后，同样发送 ACG 图片检验全链路连通性。
 - **随机日常闲聊**：每天随机 2~4 个时刻（12:00~18:00）主动找主人闲聊。
 
+### 6. 对话命令系统
+- 主人通过私聊发送 `!` 前缀命令查看/修改运行时参数。
+- 支持命令：`!help`、`!status`、`!task`、`!memory`、`!sticker`、`!clip`、`!keywords`、`!apikeys`、`!reload`、`!set`。
+
 ### 7. 消息发送优化
-- **对话 + 动作分离**：对话内容与动作描写分行发送，动作后附带匹配的表情包图片。
-- **表情包优先匹配**：根据关键词从用户历史/全局存档中选最合适的图片。
+- **对话 + 动作分离**：对话内容与动作描写分行发送，动作后附带匹配的图片。
+- **图片优先匹配**：根据关键词从 `images` 数据库按标签 + 使用次数选最合适的图片。
 - **并发锁**：使用 `send_lock` 避免 WebSocket 发送冲突。
 
 ### 8. 心跳保活
@@ -64,10 +66,37 @@
 
 ---
 
-## 依赖与环境
+## 项目结构
 
-### 数据库（MySQL）
-提前创建数据库及 4 张表：
+```
+NapCat+Pyhon/
+├── run.py                    # 入口文件，python run.py 启动
+├── Readme.md
+├── botv/                     # 功能模块包
+│   ├── __init__.py           # 模块导出
+│   ├── config.py             # 配置常量 + 全局运行时变量
+│   ├── db.py                 # 数据库连接与操作
+│   ├── log.py                # 日志系统
+│   ├── utils.py              # 通用工具（下载、base64编码等）
+│   ├── clip.py               # CLIP 模型加载与图片分析
+│   ├── image.py              # 统一图片系统（下载→打标→入库→搜索）
+│   ├── sticker_archive.py    # 旧表情包存档兼容层
+│   ├── personality.py        # 人设系统
+│   ├── memory.py             # 对话记忆与关键词
+│   ├── api.py                # DeepSeek + 豆包 模型调用
+│   ├── send.py               # 消息发送与选图
+│   ├── commands.py           # ! 命令系统
+│   ├── schedule.py           # 定时任务 + 工作日判断
+│   ├── heartbeat.py          # WebSocket 心跳
+│   ├── handler.py            # QQ 消息处理主循环
+│   └── main.py               # async def main() 启动函数
+```
+
+---
+
+## 数据库建表
+
+提前创建数据库及 5 张表：
 
 ```sql
 CREATE DATABASE IF NOT EXISTS TomoriNaoBotData;
@@ -88,8 +117,9 @@ CREATE TABLE api_keys (
 );
 
 INSERT INTO api_keys (key_name, key_value) VALUES ('DS_API_KEY', 'your_deepseek_key');
-INSERT INTO api_keys (key_name, key_value) VALUES ('ARK_API_KEY', 'your_doubao_key');
-INSERT INTO api_keys (key_name, key_value) VALUES ('STICKER_API_KEY', 'your_sticker_api_key');
+INSERT INTO api_keys
+ (key_name, key_value) VALUES ('ARK_API_KEY', 'your_doubao_key');
+INSERT INTO api_keys (key_name, key_value) VALUES ('ALAPI_TOKEN', 'your_alapi_token');
 
 CREATE TABLE global_keywords (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -105,9 +135,24 @@ CREATE TABLE user_memory (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_target_id (target_id)
 );
+
+CREATE TABLE images (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    md5_hash VARCHAR(32) NOT NULL UNIQUE,
+    image_data MEDIUMBLOB,
+    tags VARCHAR(255) DEFAULT '',
+    source_url VARCHAR(512) DEFAULT '',
+    file_path VARCHAR(255) DEFAULT '',
+    ext VARCHAR(10) DEFAULT 'jpg',
+    use_count INT DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
-### Python 依赖
+---
+
+## Python 依赖
+
 ```bash
 pip install websockets requests urllib3 jieba Pillow pymysql chinesecalendar
 ```
@@ -119,7 +164,7 @@ pip install git+https://github.com/openai/CLIP.git
 ```
 > 若未安装 CLIP 依赖，程序会禁用 CLIP 识图功能，仅做普通图片存档。
 
-### NapCat 配置
+**NapCat 配置：**
 - NapCat 网络配置中添加 WebSocket 客户端地址：`ws://127.0.0.1:3001`
 
 ---
@@ -127,11 +172,11 @@ pip install git+https://github.com/openai/CLIP.git
 ## 启动流程
 
 1. **创建 MySQL 数据库** `TomoriNaoBotData` 并执行建表 SQL。
-2. 在 `api_keys` 表中插入你的 DeepSeek 和豆包 API 密钥。
+2. 在 `api_keys` 表中插入你的 DeepSeek、豆包、ALAPI 密钥。
 3. **启动 NapCat** 或兼容的 QQ 客户端。
-4. **运行 botv5.py**：
+4. **运行入口文件**：
    ```bash
-   python botv5.py
+   python run.py
    ```
 5. 程序启动时自动：
    - 从 MySQL 加载对话记忆和全局关键词
@@ -141,11 +186,11 @@ pip install git+https://github.com/openai/CLIP.git
    - 尝试远程拉取人设补充文本
    - 启动 WebSocket 服务（监听 `0.0.0.0:3001`），等待 QQ 连接
    - 启动心跳监控和定时任务协程
-   - 连接成功后向主人发送上线提示
+   - 连接成功后向主人发送上线提示（文字 + ACG 图片）
 
 ---
 
 ## 写在最后
 - 目前该程序已在 **联想小新 Air14 2018（Intel 8250U + MX150 + 16G）** 上成功运行，CLIP CPU 推理单张图片约 1~3 秒。
 - 人设、定时任务时间、API 端点等均可按需修改。
-- 运行文件：**`botv5.py`**（CLIP 识图版）/ `botv4.py`（旧版 Tesseract OCR）/ 其他文件为历史版本。
+- 运行文件：**`run.py`**（模块化版）
