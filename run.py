@@ -17,6 +17,7 @@ REQUIRED_PACKAGES = [
     "jieba",            # 中文分词
     "Pillow",           # 图片处理（PIL）
     "chinesecalendar",  # 中国节假日判断（可选，降级为 weekday）
+    "aiohttp",          # HTTP API 服务器
 ]
 
 # 可选依赖（安装失败不影响主流程）

@@ -226,6 +226,20 @@ async def handle_logs(request):
 
 
 async def handle_chat(request):
+    """POST /api/chat - AI对话（和QQ完全一致，共享记忆）
+    请求体 JSON:
+    {
+        "message": "你好",          // 用户消息
+        "target_id": "822891053",   // 对话对象ID（必填，用于记忆隔离）
+        "keywords": ["可爱"]         // 可选，当前话题关键词
+    }
+    响应:
+    {
+        "success": true,
+        "reply": "哼，谁要理你...",
+        "target_id": "822891053"
+    }
+    """
     try:
         body = await request.json()
     except Exception:
@@ -235,7 +249,10 @@ async def handle_chat(request):
     if not message:
         return _json_response({"error": "empty_message", "message": "message 不能为空"}, 400)
 
-    target_id = str(body.get("target_id", MASTER_QQ))
+    target_id = str(body.get("target_id", "")).strip()
+    if not target_id:
+        return _json_response({"error": "missing_target_id", "message": "target_id 不能为空，用于记忆隔离"}, 400)
+
     keywords = body.get("keywords", None)
 
     try:
