@@ -296,16 +296,15 @@ async def handle_command(text, uid, ws, is_group, gid):
     elif cmd_name == "clear":
         target = parts[1] if len(parts) > 1 else str(MASTER_QQ)
         try:
-            from .db import get_cursor
             c = get_cursor()
             c.execute("DELETE FROM user_memory WHERE target_id=%s", (target,))
             c.execute("DELETE FROM events WHERE target_id=%s", (target,))
             c.connection.commit()
             if target in cfg.user_memory_pool:
                 del cfg.user_memory_pool[target]
-            reply = f"🗑️ 已清除 {target} 的对话记忆和事件记录"
+            reply = f"已清除 {target} 的对话记忆和事件记录"
         except Exception as e:
-            reply = f"❌ 清除失败: {e}"
+            reply = f"清除失败: {e}"
 
     elif cmd_name == "log":
         line_count = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 20
