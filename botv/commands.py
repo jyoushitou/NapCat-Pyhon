@@ -6,7 +6,7 @@ from .config import MASTER_QQ, LISTEN_HOST, LISTEN_PORT_QQ, HEARTBEAT_INTERVAL, 
 import botv.config as cfg
 
 from .log import log_send, log_system, log_err, get_recent_logs
-from .db import reload_api_keys, get_db
+from .db import reload_api_keys, get_db, get_cursor, get_recent_usage
 from .memory import load_memories, extract_keywords
 from .schedule import is_workday_today, SCHEDULE_TASKS, CHINESE_CALENDAR_OK
 from .send import send_private_msg, send_group_msg
@@ -43,6 +43,7 @@ def build_cmd_help():
         "!clear <uid>   - 清除指定对象的对话记忆\n"
         "!log <行数>     - 查看最近日志（默认20行）\n"
         "!db            - 查看数据库连接状态\n"
+        "!usage         - 查看最近10次token用量和使用模型\n"
         "!uptime        - 查看机器人运行时长\n"
         "!ping          - 测试机器人是否在线\n"
     )
@@ -338,18 +339,22 @@ async def handle_command(text, uid, ws, is_group, gid):
 
     elif cmd_name == "uptime":
         try:
-            from .db import get_cursor
             c = get_cursor()
             c.execute("SELECT MIN(id) as first_id, MIN(created_at) as first_log FROM logs")
             r = c.fetchone()
             if r and r["first_log"]:
-                start = datetime.strptime(r["first_log"], "%Y-%m-%d %H:%M:%S")
+                first_log = r["first_log"]
+                # created_at 可能是 datetime 对象或字符串
+                if isinstance(first_log, datetime):
+                    start = first_log
+                else:
+                    start = datetime.strptime(str(first_log), "%Y-%m-%d %H:%M:%S")
                 now = datetime.now()
                 delta = now - start
                 days = delta.days
                 hours = delta.seconds // 3600
                 mins = (delta.seconds % 3600) // 60
-                reply = f"⏱️ 机器人运行时长：{days}天{hours}小时{mins}分钟\n  首次日志: {r['first_log']}"
+                reply = f"⏱️ 机器人运行时长：{days}天{hours}小时{mins}分钟\n  首次日志: {start.strftime('%Y-%m-%d %H:%M:%S')}"
             else:
                 reply = "⏱️ 暂无运行时长数据"
         except Exception as e:
@@ -357,6 +362,36 @@ async def handle_command(text, uid, ws, is_group, gid):
 
     elif cmd_name == "ping":
         reply = "🏓 Pong！奈绪在线~"
+
+    elif cmd_name == "usage":
+        try:
+            records = get_recent_usage(10)
+            if not records:
+                reply = "📊 暂无token用量记录"
+            else:
+                lines = ["📊 最近10次AI调用token用量："]
+                total_prompt = 0
+                total_completion = 0
+                total_all = 0
+                for i, r in enumerate(records, 1):
+                    model = r["model_name"]
+                    pt = r["prompt_tokens"] or 0
+                    ct = r["completion_tokens"] or 0
+                    tt = r["total_tokens"] or 0
+                    tm = r["created_at"]
+                    if hasattr(tm, 'strftime'):
+                        tm_str = tm.strftime('%m-%d %H:%M')
+                    else:
+                        tm_str = str(tm)[5:16] if tm else ''
+                    lines.append(f"  {i}. [{model}] 输入{pt}+输出{ct}={tt} ({tm_str})")
+                    total_prompt += pt
+                    total_completion += ct
+                    total_all += tt
+                lines.append(f"  ─────────────────────")
+                lines.append(f"  📈 合计: 输入{total_prompt}+输出{total_completion}={total_all}")
+                reply = "\n".join(lines)
+        except Exception as e:
+            reply = f"❌ 查询token用量失败: {e}"
 
     else:
         reply = f"❌ 未知命令: {cmd_name}\n输入 !help 查看可用命令"

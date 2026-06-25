@@ -47,6 +47,21 @@ async def main():
     except Exception as e:
         log_err(f"建表失败: {e}")  # 建表失败记录错误
     
+        # 确保 ai_raw_responses 表有 token 用量字段（兼容旧表升级）
+    try:
+        c = get_cursor()
+        c.execute("SHOW COLUMNS FROM ai_raw_responses LIKE 'prompt_tokens'")
+        if not c.fetchone():
+            c.execute("ALTER TABLE ai_raw_responses ADD COLUMN prompt_tokens INT DEFAULT 0")
+            c.execute("ALTER TABLE ai_raw_responses ADD COLUMN completion_tokens INT DEFAULT 0")
+            c.execute("ALTER TABLE ai_raw_responses ADD COLUMN total_tokens INT DEFAULT 0")
+            c.connection.commit()
+            log_system("ai_raw_responses 表已升级，添加token用量字段")
+        else:
+            log_system("ai_raw_responses 表token字段已存在")
+    except Exception as e:
+        log_err(f"升级ai_raw_responses表失败: {e}")
+    
     cfg.PROCESS_LOCK = asyncio.Lock()  # 初始化消息处理锁（防止并发处理同一条消息）
     log_system("初始化完成(CLIP识图版)")  # 日志记录初始化完成
     
