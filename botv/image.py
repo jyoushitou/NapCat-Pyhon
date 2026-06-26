@@ -11,7 +11,7 @@ import botv.config as cfg  # 全局运行时变量
 from .db import get_cursor  # 数据库游标
 from .log import log_system, log_api, log_err  # 日志
 from .clip import analyze_image_with_clip  # CLIP图片分析
-from .utils import download_url, create_http_session, encode_image_base64  # 工具函数
+from .utils import download_url, create_http_session, encode_image_base64, DEFAULT_HEADERS  # 工具函数
 
 
 def image_local_path(md5_hash, ext="jpg"):
@@ -130,8 +130,8 @@ async def fetch_and_save_acg_image():
     session = create_http_session()  # 创建HTTP会话
     try:
         r = session.get("https://v3.alapi.cn/api/acg",  # 调用ALAPI ACG接口
-                       params={"token": cfg.STICKER_API_ALAPI_TOKEN, "format": "json"},  # 传token和格式
-                       timeout=10, verify=False)  # 10秒超时，不验证SSL
+               params={"token": cfg.STICKER_API_ALAPI_TOKEN, "format": "json"},  # 传token和格式
+               timeout=10, verify=False, headers=DEFAULT_HEADERS)  # 10秒超时，不验证SSL，添加浏览器UA头
         if r.status_code == 200:  # HTTP请求成功
             data = r.json()  # 解析JSON
             if data.get("code") == 200 and data.get("data"):  # API返回成功
@@ -155,8 +155,8 @@ async def search_alapi_and_save(keywords):
     session = create_http_session()  # 创建HTTP会话
     try:
         r = session.get("https://v3.alapi.cn/api/doutu",  # 调用ALAPI斗图接口
-                       params={"token": cfg.STICKER_API_ALAPI_TOKEN, "keyword": kw},  # 传token和关键词
-                       timeout=10, verify=False)  # 10秒超时，不验证SSL
+               params={"token": cfg.STICKER_API_ALAPI_TOKEN, "keyword": kw},  # 传token和关键词
+               timeout=10, verify=False, headers=DEFAULT_HEADERS)  # 10秒超时，不验证SSL，添加浏览器UA头
         if r.status_code == 200:  # HTTP请求成功
             data = r.json()  # 解析JSON
             if data.get("data") and isinstance(data["data"], list) and data["data"]:  # 返回图片列表

@@ -113,7 +113,11 @@ async def call_doubao(msgs):
                 else:  # 回复为空
                     log_api("[豆包] 回复内容为空")  # 日志记录
                     save_ai_raw_response("豆包", user_msg, raw_json, "", target_id, "empty_reply")  # 保存空回复记录
-            else:  # 非200状态码
+            elif r.status_code==401:  # 认证错误，直接返回兜底，不再重试
+                log_api(f"[豆包] 认证失败(401)，跳过重试: {r.text[:200]}")  # 日志记录
+                save_ai_raw_response("豆包", user_msg, {"status_code": 401, "text": r.text[:500]}, "", target_id, "auth_error")  # 保存错误记录
+                break  # 跳出重试循环
+            else:  # 其他非200状态码
                 log_api(f"[豆包] 非200响应: {r.text[:200]}")  # 日志记录错误信息
                 save_ai_raw_response("豆包", user_msg, {"status_code": r.status_code, "text": r.text[:500]}, "", target_id, f"http_error_{r.status_code}")  # 保存错误记录
         except Exception as e:  # 捕获异常

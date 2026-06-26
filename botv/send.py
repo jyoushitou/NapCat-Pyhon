@@ -63,17 +63,40 @@ async def build_reply_message(txt, uid, kws=None):
             abs_fp = os.path.abspath(fp)  # 转为绝对路径（NapCat需要绝对路径）
             log_api(f"[构建回复] 搜到图片: {abs_fp}")  # 日志记录
             parts.append(("image", [{"type":"image","data":{"file":abs_fp}}]))  # 添加图片消息
-        else:  # 20纬度都搜不到
-            log_api(f"[构建回复] 20纬度均未搜到图，启动1分钟延迟jieba兜底")  # 日志记录
-            asyncio.create_task(_delayed_jieba_fallback(dialog, action, uid))  # 延迟1分钟用jieba兜底
-    else:  # img_kw为空
-        log_api(f"[构建回复] img_kw为空，启动1分钟延迟jieba兜底")  # 日志记录
-        asyncio.create_task(_delayed_jieba_fallback(dialog, action, uid))  # 延迟1分钟用jieba兜底
+        else:  # 20纬度都搜不到，立即用jieba兜底（不等1分钟）
+            log_api(f"[构建回复] 20纬度均未搜到图，立即用jieba兜底")  # 日志记录
+            search_kws = extract_keywords(f"{dialog} {action}")  # 用jieba从对话+动作中提取关键词
+            if search_kws:
+                log_api(f"[构建回复] jieba兜底关键词: {search_kws}")  # 日志记录
+                fp2 = await get_best_image(search_kws, uid)  # 按jieba关键词搜图
+                if fp2:
+                    abs_fp2 = os.path.abspath(fp2)
+                    log_api(f"[构建回复] jieba兜底搜到图片: {abs_fp2}")
+                    parts.append(("image", [{"type":"image","data":{"file":abs_fp2}}]))
+                else:
+                    log_api(f"[构建回复] jieba兜底搜图也无结果")
+            else:
+                log_api(f"[构建回复] jieba兜底无关键词")
+    else:  # img_kw为空，立即用jieba兜底
+        log_api(f"[构建回复] img_kw为空，立即用jieba兜底")  # 日志记录
+        search_kws = extract_keywords(f"{dialog} {action}")  # 用jieba从对话+动作中提取关键词
+        if search_kws:
+            log_api(f"[构建回复] jieba兜底关键词: {search_kws}")  # 日志记录
+            fp = await get_best_image(search_kws, uid)  # 按jieba关键词搜图
+            if fp:
+                abs_fp = os.path.abspath(fp)
+                log_api(f"[构建回复] jieba兜底搜到图片: {abs_fp}")
+                parts.append(("image", [{"type":"image","data":{"file":abs_fp}}]))
+            else:
+                log_api(f"[构建回复] jieba兜底搜图也无结果")
+        else:
+            log_api(f"[构建回复] jieba兜底无关键词")
     return parts  # 返回消息片段列表
 
 
 async def _delayed_jieba_fallback(dialog, action, uid):
-    """延迟1分钟后用jieba提取关键词搜图兜底（后台任务）"""
+    """延迟1分钟后用jieba提取关键词搜图兜底（后台任务）
+    注意：此函数已不再被build_reply_message调用，保留以兼容旧代码"""
     await asyncio.sleep(60)  # 等待60秒
     search_kws = extract_keywords(f"{dialog} {action}")  # 用jieba从对话+动作中提取关键词
     log_api(f"[构建回复] jieba兜底关键词(延迟1min): {search_kws}")  # 日志记录

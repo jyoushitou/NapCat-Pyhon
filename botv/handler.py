@@ -117,6 +117,9 @@ async def websocket_handle_qq(ws):
                         await send_sticker_private(uid, ws, uid)  # 发送私聊表情包
                 else:  # 普通对话
                     ans = await get_character_reply(text, tid, ck)  # 获取AI回复
+                    if not ans:  # 两个模型都失败，使用兜底回复
+                        ans = "嗯嗯(点头)\n关键词搜索图片用：点头、嗯"
+                        log_api("[handler] 两个模型均无回复，使用兜底回复")
                     dialog, action, img_kw, event, refined_kw = parse_ai_reply(ans)  # 解析AI回复
                     add_target_memory(tid, text, ans, img_kw, refined_kw, event)  # 保存记忆
                     await send_short_reply(gid if mt=="group" else uid, ans, ws, uid, mt=="group", ck)  # 发送回复
