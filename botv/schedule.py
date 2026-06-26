@@ -1,21 +1,29 @@
-# 定时任务：催起床、提醒等 + 工作日判断
-import asyncio, random, os
-from datetime import datetime, time, date
-from .config import MASTER_QQ, CST, IMAGE_DIR
-import botv.config as cfg
-from .log import log_system, log_err
-from .api import get_character_reply
-from .memory import add_target_memory
-from .send import send_short_reply, send_private_msg
-from .image import fetch_and_save_acg_image, search_local_image_by_tags, get_best_image
-from .utils import encode_image_base64, make_image_msg, parse_ai_reply
+# ===================== 定时任务模块 =====================
+# 管理所有定时主动消息：催起床、催睡觉、提醒吃饭、主动闲聊等
+# 支持工作日/节假日动态调整时间，随机偏移避免机械感
+# 使用 chinesecalendar 库判断法定节假日（可选）
+
+import asyncio  # 异步 IO：定时器循环
+import random  # 随机偏移和选择
+import os  # 文件路径操作
+from datetime import datetime, time, date  # 时间处理
+from .config import MASTER_QQ, CST, IMAGE_DIR  # 配置常量
+import botv.config as cfg  # 全局运行时变量
+from .log import log_system, log_err  # 日志
+from .api import get_character_reply  # AI 回复
+from .memory import add_target_memory  # 记忆管理
+from .send import send_short_reply, send_private_msg  # 消息发送
+from .image import fetch_and_save_acg_image, search_local_image_by_tags, get_best_image  # 图片处理
+from .utils import encode_image_base64, make_image_msg, parse_ai_reply  # 工具函数
 
 # 工作日判断（chinesecalendar 可选）
 try:
-    from chinesecalendar import is_workday as _is_workday
-    CHINESE_CALENDAR_OK = True
+    from chinesecalendar import is_workday as _is_workday  # 法定工作日判断
+    CHINESE_CALENDAR_OK = True  # 库可用标志
 except:
-    CHINESE_CALENDAR_OK = False
+    CHINESE_CALENDAR_OK = False  # 库未安装，降级使用 weekday 判断
+
+
 
 def is_workday_today():
     """判断今天是否是法定工作日，使用 chinesecalendar 库"""
