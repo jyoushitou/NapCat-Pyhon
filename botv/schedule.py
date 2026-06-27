@@ -23,8 +23,6 @@ try:
 except:
     CHINESE_CALENDAR_OK = False  # 库未安装，降级使用 weekday 判断
 
-
-
 def is_workday_today():
     """判断今天是否是法定工作日，使用 chinesecalendar 库"""
     if CHINESE_CALENDAR_OK:
@@ -180,7 +178,7 @@ async def cycle_task_run():
                 cfg.daily_trigger.add(nao_birthday_key)
                 log_system("奈绪生日快乐！")
 
-                                    # ---------- 任务触发 ----------
+            # ---------- 任务触发 ----------
             for task in SCHEDULE_TASKS:
                 key = f"{task['scene']}_{today}"
                 if key in cfg.daily_trigger:
@@ -194,83 +192,91 @@ async def cycle_task_run():
                 if tm is None or cur_minute != tm:
                     continue
 
-                # 执行任务（用随机自然提示让AI以女友身份主动发起对话，每次不一样）
-                if task["scene"] == "催起床":
-                    prompt = random.choice([
-                        "现在是早上，该催主人起床了，你主动发消息给他",
-                        "早上好，主人还在睡懒觉，你叫他起床",
-                        "天亮了，主人还没醒，你去喊他起床",
-                    ])
-                    rep = await get_character_reply(prompt, str(MASTER_QQ))
-                    await send_short_reply(MASTER_QQ, rep, cfg.active_ws_qq, MASTER_QQ)
-                    img_fp = await fetch_and_save_acg_image()
-                    img_msg = make_image_msg(img_fp)
-                    if img_msg and cfg.active_ws_qq and not getattr(cfg.active_ws_qq, "closed", False):
-                        await send_private_msg(MASTER_QQ, img_msg, cfg.active_ws_qq)
-                        log_system("ACG起床图已发送")
-                elif task["scene"] == "催睡觉":
-                    prompt = random.choice([
-                        "夜深了，该催主人睡觉了，你主动发消息给他",
-                        "很晚了，主人还没睡，你催他去睡觉",
-                        "已经深夜了，主人还在熬夜，你叫他早点休息",
-                    ])
-                    rep = await get_character_reply(prompt, str(MASTER_QQ))
-                    await send_short_reply(MASTER_QQ, rep, cfg.active_ws_qq, MASTER_QQ)
-                    img_fp = await fetch_and_save_acg_image()
-                    img_msg = make_image_msg(img_fp)
-                    if img_msg and cfg.active_ws_qq and not getattr(cfg.active_ws_qq, "closed", False):
-                        await send_private_msg(MASTER_QQ, img_msg, cfg.active_ws_qq)
-                        log_system("ACG催睡图已发送")
-                else:
-                    # 其他定时任务：每次用不同的自然提示
-                    scene_prompts = {
-                        "周末吐槽赖床": [
-                            "周末了，主人还在睡懒觉，你主动吐槽他",
-                            "休息日了，主人还没起床，你去调侃他一下",
-                        ],
-                        "提醒点外卖": [
-                            "中午了，提醒主人该点外卖了，你主动发消息",
-                            "到饭点了，主人还没吃饭，你催他去吃饭",
-                        ],
-                        "叮嘱午睡": [
-                            "中午了，叮嘱主人睡个午觉，你主动发消息",
-                            "午休时间到了，提醒主人休息一下，你主动说",
-                        ],
-                        "提醒起身": [
-                            "下午了，提醒主人起来活动活动，你主动发消息",
-                            "坐太久了，叫主人起来走走，你主动说",
-                        ],
-                        "提醒晚餐": [
-                            "晚上了，提醒主人该吃晚饭了，你主动发消息",
-                            "到晚饭时间了，主人还没吃，你催他去吃饭",
-                        ],
-                    }
-                    prompts = scene_prompts.get(task["scene"], ["你主动找主人聊聊天"])
-                    prompt = random.choice(prompts)
-                    rep = await get_character_reply(prompt, str(MASTER_QQ))
-                    await send_short_reply(MASTER_QQ, rep, cfg.active_ws_qq, MASTER_QQ)
-
+                # ★ 修复：先标记任务已触发，防止异常导致重复触发
                 cfg.daily_trigger.add(key)
                 log_system(f"定时:{task['scene']}")
 
-                # ---------- 主动闲聊触发（基于事件记忆，让AI自己发挥） ----------
+                # 执行任务（用随机自然提示让AI以女友身份主动发起对话，每次不一样）
+                try:
+                    if task["scene"] == "催起床":
+                        prompt = random.choice([
+                            "现在是早上，该催主人起床了，你主动发消息给他",
+                            "早上好，主人还在睡懒觉，你叫他起床",
+                            "天亮了，主人还没醒，你去喊他起床",
+                        ])
+                        rep = await get_character_reply(prompt, str(MASTER_QQ))
+                        await send_short_reply(MASTER_QQ, rep, cfg.active_ws_qq, MASTER_QQ)
+                        img_fp = await fetch_and_save_acg_image()
+                        img_msg = make_image_msg(img_fp)
+                        if img_msg and cfg.active_ws_qq and not getattr(cfg.active_ws_qq, "closed", False):
+                            await send_private_msg(MASTER_QQ, img_msg, cfg.active_ws_qq)
+                            log_system("ACG起床图已发送")
+                    elif task["scene"] == "催睡觉":
+                        prompt = random.choice([
+                            "夜深了，该催主人睡觉了，你主动发消息给他",
+                            "很晚了，主人还没睡，你催他去睡觉",
+                            "已经深夜了，主人还在熬夜，你叫他早点休息",
+                        ])
+                        rep = await get_character_reply(prompt, str(MASTER_QQ))
+                        await send_short_reply(MASTER_QQ, rep, cfg.active_ws_qq, MASTER_QQ)
+                        img_fp = await fetch_and_save_acg_image()
+                        img_msg = make_image_msg(img_fp)
+                        if img_msg and cfg.active_ws_qq and not getattr(cfg.active_ws_qq, "closed", False):
+                            await send_private_msg(MASTER_QQ, img_msg, cfg.active_ws_qq)
+                            log_system("ACG催睡图已发送")
+                    else:
+                        # 其他定时任务：每次用不同的自然提示
+                        scene_prompts = {
+                            "周末吐槽赖床": [
+                                "周末了，主人还在睡懒觉，你主动吐槽他",
+                                "休息日了，主人还没起床，你去调侃他一下",
+                            ],
+                            "提醒点外卖": [
+                                "中午了，提醒主人该点外卖了，你主动发消息",
+                                "到饭点了，主人还没吃饭，你催他去吃饭",
+                            ],
+                            "叮嘱午睡": [
+                                "中午了，叮嘱主人睡个午觉，你主动发消息",
+                                "午休时间到了，提醒主人休息一下，你主动说",
+                            ],
+                            "提醒起身": [
+                                "下午了，提醒主人起来活动活动，你主动发消息",
+                                "坐太久了，叫主人起来走走，你主动说",
+                            ],
+                            "提醒晚餐": [
+                                "晚上了，提醒主人该吃晚饭了，你主动发消息",
+                                "到晚饭时间了，主人还没吃，你催他去吃饭",
+                            ],
+                        }
+                        prompts = scene_prompts.get(task["scene"], ["你主动找主人聊聊天"])
+                        prompt = random.choice(prompts)
+                        rep = await get_character_reply(prompt, str(MASTER_QQ))
+                        await send_short_reply(MASTER_QQ, rep, cfg.active_ws_qq, MASTER_QQ)
+                except Exception as task_e:
+                    log_err(f"定时任务执行异常({task['scene']}):{task_e}")
+
+            # ---------- 主动闲聊触发（基于事件记忆，让AI自己发挥） ----------
             if (cur_minute in cfg.daily_chat_trigger_times and
                     cur_minute not in cfg.triggered_today):
+                # ★ 修复：先标记已触发，防止异常导致重复触发
                 cfg.triggered_today.add(cur_minute)
-                # 从数据库加载最近的事件作为话题
-                from .db import load_events_from_db
-                recent_events = load_events_from_db(str(MASTER_QQ), limit=5)
-                if recent_events:
-                    # 有事件记忆时，把事件传给AI，让AI自己决定怎么接着聊
-                    chosen_event = random.choice(recent_events)[0]
-                    log_system(f"主动闲聊触发（基于事件: {chosen_event}）")
-                    rep = await get_character_reply(f"闲聊（之前{chosen_event}）", str(MASTER_QQ))
-                else:
-                    # 没有事件时直接传闲聊
-                    log_system(f"主动闲聊触发（无事件）")
-                    rep = await get_character_reply("闲聊", str(MASTER_QQ))
-                await send_short_reply(MASTER_QQ, rep, cfg.active_ws_qq, MASTER_QQ)
-                log_system(f"主动闲聊触发完成")
+                try:
+                    # 从数据库加载最近的事件作为话题
+                    from .db import load_events_from_db
+                    recent_events = load_events_from_db(str(MASTER_QQ), limit=5)
+                    if recent_events:
+                        # 有事件记忆时，把事件传给AI，让AI自己决定怎么接着聊
+                        chosen_event = random.choice(recent_events)[0]
+                        log_system(f"主动闲聊触发（基于事件: {chosen_event}）")
+                        rep = await get_character_reply(f"闲聊（之前{chosen_event}）", str(MASTER_QQ))
+                    else:
+                        # 没有事件时直接传闲聊
+                        log_system(f"主动闲聊触发（无事件）")
+                        rep = await get_character_reply("闲聊", str(MASTER_QQ))
+                    await send_short_reply(MASTER_QQ, rep, cfg.active_ws_qq, MASTER_QQ)
+                    log_system(f"主动闲聊触发完成")
+                except Exception as chat_e:
+                    log_err(f"主动闲聊执行异常:{chat_e}")
 
         except Exception as e:
             log_err(f"定时异常:{e}")

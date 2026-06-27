@@ -493,6 +493,13 @@ def encode_image_base64(d):
     try: return base64.b64encode(d).decode()[:150000]
     except: return ""
 
+def contains_sticker_key(text):
+    """检查文本是否包含表情包触发关键词"""
+    for kw in STICKER_KEYWORDS:
+        if kw in text:
+            return True
+    return False
+
 # ===================== 12. 消息解析(CLIP识图) =====================
 async def parse_message_content(raw_content,user_id):
     input_text=""; img_info=[]
@@ -890,26 +897,35 @@ async def cycle_task_run():
                 if now.weekday() not in task["weekday"]: continue
                 tm=task_trigger_minute.get(key)
                 if tm is None or cur!=tm: continue
+                # ★ 修复：先标记任务已触发，防止异常导致重复触发
+                daily_trigger.add(key)
+                log_system(f"定时:{task['scene']}")
                 # 催起床特殊处理：发文字 + ACG 图片
-                if task["scene"] == "催起床":
-                    rep = await get_character_reply("催起床", str(MASTER_QQ))
-                    await send_short_reply(MASTER_QQ, rep, active_ws_qq, MASTER_QQ)
-                    # 异步获取 ACG 图片并发送
-                    img_fp = await asyncio.to_thread(fetch_and_save_acg_image)
-                    if img_fp and active_ws_qq and not getattr(active_ws_qq, "closed", False):
-                        with open(img_fp, "rb") as f:
-                            b64 = encode_image_base64(f.read())
-                        await send_private_msg(MASTER_QQ, [{"type":"image","data":{"file":b64}}], active_ws_qq)
-                        log_system("ACG起床图已发送")
-                else:
-                    rep = await get_character_reply(task["scene"], str(MASTER_QQ))
-                    await send_short_reply(MASTER_QQ, rep, active_ws_qq, MASTER_QQ)
-                daily_trigger.add(key); log_system(f"定时:{task['scene']}")
+                try:
+                    if task["scene"] == "催起床":
+                        rep = await get_character_reply("催起床", str(MASTER_QQ))
+                        await send_short_reply(MASTER_QQ, rep, active_ws_qq, MASTER_QQ)
+                        # 异步获取 ACG 图片并发送
+                        img_fp = await asyncio.to_thread(fetch_and_save_acg_image)
+                        if img_fp and active_ws_qq and not getattr(active_ws_qq, "closed", False):
+                            with open(img_fp, "rb") as f:
+                                b64 = encode_image_base64(f.read())
+                            await send_private_msg(MASTER_QQ, [{"type":"image","data":{"file":b64}}], active_ws_qq)
+                            log_system("ACG起床图已发送")
+                    else:
+                        rep = await get_character_reply(task["scene"], str(MASTER_QQ))
+                        await send_short_reply(MASTER_QQ, rep, active_ws_qq, MASTER_QQ)
+                except Exception as task_e:
+                    log_err(f"定时任务执行异常({task['scene']}):{task_e}")
             if cur in daily_chat_trigger_times and cur not in triggered_today:
+                # ★ 修复：先标记已触发，防止异常导致重复触发
                 triggered_today.add(cur)
-                rep=await get_character_reply("闲聊",str(MASTER_QQ))
-                await send_short_reply(MASTER_QQ,rep,active_ws_qq,MASTER_QQ)
-                log_system("闲聊触发")
+                try:
+                    rep=await get_character_reply("闲聊",str(MASTER_QQ))
+                    await send_short_reply(MASTER_QQ,rep,active_ws_qq,MASTER_QQ)
+                    log_system("闲聊触发")
+                except Exception as chat_e:
+                    log_err(f"主动闲聊执行异常:{chat_e}")
         except Exception as e: log_err(f"定时异常:{e}")
         await asyncio.sleep(1)
 

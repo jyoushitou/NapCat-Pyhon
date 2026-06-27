@@ -35,7 +35,7 @@
 
 ### 4. 简短回复 + 动作描写
 - 模型回复限 **max_tokens=200**，保证回复简短精炼。
-- 支持 **两段式回复**：第一行对话内容，第二行动作描写（如 `（扭头）`）。
+- 支持 **五行格式回复**：对话内容、动作描写、图片搜索关键词（20纬度）、事件摘要、关键词提炼。
 - 动作行后自动附带匹配的表情包图片，无动作行时附带 QQ 表情。
 
 ### 5. 定时任务 + 随机偏移
@@ -48,13 +48,13 @@
 
 ### 6. 对话命令系统
 - 主人通过私聊发送 `!` 前缀命令查看/修改运行时参数。
-- 支持命令：`!help`、`!status`、`!status all`、`!task`、`!memory`、`!memory <uid>`、`!sticker`、`!clip`、`!keywords`、`!apikeys`、`!reload`、`!set`、`!say`、`!sayg`、`!img`、`!acg`、`!event`、`!clear`、`!log`、`!db`、`!uptime`、`!ping`。
+- 支持命令：`!help`、`!status`、`!status all`、`!task`、`!memory`、`!memory <uid>`、`!sticker`、`!clip`、`!keywords`、`!apikeys`、`!reload`、`!set`、`!say`、`!sayg`、`!img`、`!acg`、`!event`、`!clear`、`!log`、`!db`、`!uptime`、`!ping`、`!usage`。
 
 ### 7. 消息发送优化
 - **对话 + 动作分离**：对话内容与动作描写分行发送，动作后附带匹配的图片。
 - **图片优先匹配**：根据关键词从 `images` 数据库按标签 + 使用次数选最合适的图片。
 - **并发锁**：使用 `send_lock` 避免 WebSocket 发送冲突。
-- **延迟兜底搜图**：AI 未提供图片关键词时，1 分钟后用 jieba 从对话中提取关键词再次搜图。
+- **即时兜底搜图**：AI 未提供图片关键词时，立即用 jieba 从对话中提取关键词再次搜图（无需等待 1 分钟）。
 
 ### 8. 心跳保活
 - 每隔 **15 秒** 发送 WebSocket ping 帧，检测连接是否存活。
@@ -64,7 +64,12 @@
 - **控制台 + MySQL 数据库** 双写日志（系统/接收/发送/接口/异常 五级）。
 - **消息去重**：缓存最近 80 条已处理消息 ID，避免重复响应。
 - **网络容错**：图片下载、模型请求均带重试机制；API 密钥缺失时自动降级。
-- **AI 原始返回保存**：每次模型调用结果（完整 JSON）存入 `ai_raw_responses` 表，便于调试。
+- **AI 原始返回保存**：每次模型调用结果（完整 JSON）存入 `ai_raw_responses` 表，便于调试和分析 token 用量。
+
+### 10. 事件记忆系统
+- 从对话中提取重要事件（如"今天考试""明天出去玩"），存入 `events` 数据库表。
+- 在构建提示词时注入事件记忆，让 AI 记住用户的重要日程。
+- 每个用户最多保留 20 条事件，支持按标签关键词过滤检索。
 
 ### 11. HTTP API 服务器（v6 新增 ⭐）
 - 基于 `aiohttp` 的异步 HTTP 服务器，监听端口 **60908**。
@@ -76,36 +81,36 @@
 - **健康检查** `GET /api/health`：无需 Token，供外部程序检测服务是否存活。
 - 完整接口列表：`GET /api/health`、`GET /api/status`、`GET /api/usage`、`GET /api/memory`、`GET /api/logs`、`GET /api/token`、`POST /api/chat`、`POST /api/command`。
 
-### 10. 事件记忆系统
-- 从对话中提取重要事件（如"今天考试""明天出去玩"），存入 `events` 数据库表。
-- 在构建提示词时注入事件记忆，让 AI 记住用户的重要日程。
-
 ---
 
 ## 项目结构
 
 ```
-NapCat+Pyhon/
+NapCat+Python/
 ├── run.py                    # 入口文件，python run.py 启动
-├── Readme.md
+├── README.md                 # 项目说明文档
 ├── botv/                     # 功能模块包
-│   ├── __init__.py           # 模块导出
+│   ├── __init__.py           # 模块入口（避免循环依赖）
 │   ├── config.py             # 配置常量 + 全局运行时变量
-│   ├── db.py                 # 数据库连接与操作
-│   ├── log.py                # 日志系统
-│   ├── utils.py              # 通用工具（下载、base64编码、AI回复解析等）
+│   ├── db.py                 # 数据库连接与操作（7张表）
+│   ├── log.py                # 日志系统（控制台 + MySQL 双写）
+│   ├── utils.py              # 通用工具（下载、base64编码、AI回复解析）
 │   ├── clip.py               # CLIP 模型加载与图片分析
 │   ├── image.py              # 统一图片系统（下载→打标→入库→搜索）
 │   ├── sticker_archive.py    # 旧表情包存档兼容层
-│   ├── personality.py        # 人设系统
-│   ├── memory.py             # 对话记忆与关键词
-│   ├── api.py                # DeepSeek + 豆包 模型调用
-│   ├── send.py               # 消息发送与选图
-│   ├── commands.py           # ! 命令系统
+│   ├── personality.py        # 人设系统（本地 + 远程补充）
+│   ├── personality_supplement.txt  # 本地人设补充文件
+│   ├── memory.py             # 对话记忆与关键词管理
+│   ├── api.py                # DeepSeek + 豆包 双模型调用
+│   ├── send.py               # 消息发送与选图策略
+│   ├── commands.py           # ! 命令系统（24个命令）
 │   ├── schedule.py           # 定时任务 + 工作日判断
-│   ├── heartbeat.py          # WebSocket 心跳
+│   ├── heartbeat.py          # WebSocket 心跳保活
 │   ├── handler.py            # QQ 消息处理主循环
+│   ├── api_server.py         # HTTP API 服务器（端口 60908）
 │   └── main.py               # async def main() 启动函数
+├── images/                   # 新图片存储目录（自动创建）
+└── sticker_archive/          # 旧表情包存档目录
 ```
 
 ---
@@ -180,7 +185,10 @@ CREATE TABLE IF NOT EXISTS ai_raw_responses (
     response_text TEXT,
     target_id VARCHAR(50) DEFAULT '',
     status VARCHAR(20) DEFAULT '',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    prompt_tokens INT DEFAULT 0,
+    completion_tokens INT DEFAULT 0,
+    total_tokens INT DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
@@ -221,33 +229,47 @@ pip install git+https://github.com/openai/CLIP.git
    - 尝试远程拉取人设补充文本
    - 启动 WebSocket 服务（监听 `0.0.0.0:3001`），等待 QQ 连接
    - 启动心跳监控和定时任务协程
+   - 启动 HTTP API 服务器（监听 `0.0.0.0:60908`）
    - 连接成功后向主人发送上线提示（文字 + ACG 图片）
 
 ---
 
 ## 代码注释说明
 
-所有核心模块均已添加逐行中文注释，便于理解和二次开发：
+所有核心模块均已添加**统一风格**的逐行中文注释，便于理解和二次开发：
 
-| 文件 | 说明 |
-|------|------|
-| `botv/config.py` | 配置常量 + 全局运行时变量，每行注释 |
-| `botv/db.py` | 数据库连接池、建表、CRUD 操作 |
-| `botv/log.py` | 日志系统（控制台 + MySQL 双写） |
-| `botv/utils.py` | 通用工具函数（下载、编码、AI回复解析） |
-| `botv/clip.py` | CLIP 模型加载与图片分析 |
-| `botv/image.py` | 统一图片系统（下载→打标→入库→搜索） |
-| `botv/sticker_archive.py` | 旧表情包存档兼容层 |
-| `botv/personality.py` | 人设系统（本地 + 远程补充） |
-| `botv/memory.py` | 对话记忆与关键词管理 |
-| `botv/api.py` | DeepSeek + 豆包 双模型调用 |
-| `botv/send.py` | 消息发送与选图策略 |
-| `botv/commands.py` | ! 命令系统 |
-| `botv/schedule.py` | 定时任务 + 工作日判断 |
-| `botv/heartbeat.py` | WebSocket 心跳保活 |
-| `botv/handler.py` | QQ 消息处理主循环 |
-| `botv/api_server.py`         | HTTP API 服务器（端口 60908，供 C++ 调用） |
-| `botv/main.py`               | 主程序入口 |
+| 文件 | 说明 | 注释风格 |
+|------|------|---------|
+| `botv/config.py` | 配置常量 + 全局运行时变量 | ✅ 模块注释 + 行内注释 |
+| `botv/db.py` | 数据库连接池、建表、CRUD 操作 | ✅ 模块注释 + 函数文档 + 行内注释 |
+| `botv/log.py` | 日志系统（控制台 + MySQL 双写） | ✅ 模块注释 + 函数文档 |
+| `botv/utils.py` | 通用工具函数（下载、编码、AI回复解析） | ✅ 模块注释 + 函数文档 + 行内注释 |
+| `botv/clip.py` | CLIP 模型加载与图片分析 | ✅ 模块注释 + 函数文档 + 行内注释 |
+| `botv/image.py` | 统一图片系统（下载→打标→入库→搜索） | ✅ 模块注释 + 函数文档 + 行内注释 |
+| `botv/sticker_archive.py` | 旧表情包存档兼容层 | ✅ 模块注释 + 函数文档 + 行内注释 |
+| `botv/personality.py` | 人设系统（本地 + 远程补充） | ✅ 模块注释 + 函数文档 + 行内注释 |
+| `botv/memory.py` | 对话记忆与关键词管理 | ✅ 模块注释 + 函数文档 + 行内注释 |
+| `botv/api.py` | DeepSeek + 豆包 双模型调用 | ✅ 模块注释 + 函数文档 + 行内注释 |
+| `botv/send.py` | 消息发送与选图策略 | ✅ 模块注释 + 函数文档 + 行内注释 |
+| `botv/commands.py` | ! 命令系统（24个命令） | ✅ 模块注释 + 函数文档 + 行内注释 |
+| `botv/schedule.py` | 定时任务 + 工作日判断 | ✅ 模块注释 + 函数文档 + 行内注释 |
+| `botv/heartbeat.py` | WebSocket 心跳保活 | ✅ 模块注释 + 函数文档 + 行内注释 |
+| `botv/handler.py` | QQ 消息处理主循环 | ✅ 模块注释 + 函数文档 + 行内注释 |
+| `botv/api_server.py` | HTTP API 服务器（端口 60908） | ✅ 模块注释 + 函数文档 + 行内注释 |
+| `botv/main.py` | 主程序入口 | ✅ 模块注释 + 函数文档 + 行内注释 |
+| `botv/__init__.py` | 模块入口 | ✅ 模块注释 |
+
+### 统一注释风格规范
+
+所有代码文件遵循以下注释规范：
+
+| 注释类型 | 格式 | 示例 |
+|---------|------|------|
+| **模块级注释** | `# ===================== 模块名 =====================` + 功能说明 | `# ===================== 配置模块 =====================` |
+| **函数文档字符串** | `"""功能说明"""`（单行）或带参数说明的多行 | `def log_system(m): """系统级日志"""` |
+| **行内注释** | `# 说明`（与代码保持2个空格间隔） | `CST = timezone(timedelta(hours=8))  # 东八区（北京时间）` |
+| **代码块分隔** | `# ===================== 标题 =====================` | `# ===================== 配置常量 =====================` |
+| **全局变量注释** | `# 说明`（与变量同行） | `active_ws_qq=None  # 当前活跃的QQ WebSocket连接` |
 
 ---
 
@@ -255,3 +277,4 @@ pip install git+https://github.com/openai/CLIP.git
 - 目前该程序已在 **联想小新 Air14 2018（Intel 8250U + MX150 + 16G）** 上成功运行，CLIP CPU 推理单张图片约 1~3 秒。
 - 人设、定时任务时间、API 端点等均可按需修改。
 - 运行文件：**`run.py`**（模块化版）
+- 所有代码文件均已添加统一风格的逐行中文注释，便于二次开发和维护。
