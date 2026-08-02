@@ -1,4 +1,4 @@
-# 友利奈绪 QQ 机器人 v2.0 —— CLIP 视觉识图 + 简短动作回复 + HTTP API 服务
+# 友利奈绪 QQ 机器人 v3.0 —— CLIP 视觉识图 + 简短动作回复 + HTTP API 服务
 
 基于 **NapCat** 的 QQ 收发，**Python** 作为后端，调用 **DeepSeek** 网络 API 为主模型、**豆包** 网络 API 为备用模型，使用 **OpenAI CLIP (ViT-B/32, CPU)** 进行本地图片识别打标存档的 QQ 聊天机器人。
 
