@@ -32,7 +32,8 @@ async def call_deepseek(msgs, retry=2):
         log_api("[DS] 无API key，跳过")  # 日志记录
         return None  # 返回None
     h={"Authorization":f"Bearer {cfg.DS_API_KEY}","Content-Type":"application/json"}  # 请求头：Bearer认证
-    d={"model":DS_MODEL,"messages":msgs,"max_tokens":200,"temperature":0.7}  # 请求体：模型、消息、最大token、温度
+
+    d={"model":DS_MODEL,"messages":msgs,"max_tokens":2000 if cfg.CODE_MODE else 200,"temperature":0.7}  # 请求体：模型、消息、最大token（代码模式扩大至2000，保证完整详细回复）
     user_msg = _extract_user_msg(msgs)  # 提取用户消息
     target_id = _extract_target_id(msgs)  # 提取目标ID
     for a in range(retry):  # 重试循环
@@ -84,7 +85,8 @@ async def call_doubao(msgs):
         save_ai_raw_response("豆包(无key)", user_msg, {}, fallback, target_id, "no_api_key")  # 保存无key记录
         return fallback  # 返回兜底回复
     h={"Authorization":f"Bearer {cfg.DOUBAO_API_KEY}","Content-Type":"application/json"}  # 请求头：Bearer认证
-    d={"model":DOUBAO_MODEL,"messages":msgs,"max_tokens":200,"temperature":0.7}  # 请求体
+    temp = 0.2 if cfg.CODE_MODE else 0.7  # 代码模式降低温度以提高准确性
+    d={"model":DOUBAO_MODEL,"messages":msgs,"max_tokens":2000 if cfg.CODE_MODE else 300,"temperature":temp}  # 请求体（代码模式扩大max_tokens至2000，保证完整详细回复）
     for a in range(MAX_RETRY_TIMES):  # 重试循环（最大重试次数）
         try:
             log_api(f"[豆包] 第{a+1}次请求...")  # 日志记录重试次数

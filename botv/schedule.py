@@ -6,6 +6,7 @@
 import asyncio  # 异步 IO：定时器循环
 import random  # 随机偏移和选择
 import os  # 文件路径操作
+import time as _time  # 时间戳（代码模式超时判断用）
 from datetime import datetime, time, date  # 时间处理
 from .config import MASTER_QQ, CST, IMAGE_DIR  # 配置常量
 import botv.config as cfg  # 全局运行时变量
@@ -177,6 +178,19 @@ async def cycle_task_run():
                         await send_private_msg(MASTER_QQ, img_msg, cfg.active_ws_qq)
                 cfg.daily_trigger.add(nao_birthday_key)
                 log_system("奈绪生日快乐！")
+
+            # ---------- 代码模式30分钟超时自动退出 ----------
+            if cfg.CODE_MODE and cfg.CODE_MODE_LAST_MSG_TIME > 0:
+                if _time.time() - cfg.CODE_MODE_LAST_MSG_TIME > cfg.CODE_MODE_TIMEOUT:
+                    cfg.CODE_MODE = False
+                    cfg.CODE_MODE_LAST_MSG_TIME = 0
+                    log_system("代码模式超时自动退出（30分钟无消息）")
+                    # 通知主人代码模式已自动退出
+                    try:
+                        if cfg.active_ws_qq and not getattr(cfg.active_ws_qq, "closed", False):
+                            await send_private_msg(MASTER_QQ, [{"type":"text","data":{"text":"⏰ 代码模式已因30分钟无消息自动退出，恢复人设回复"}}], cfg.active_ws_qq)
+                    except Exception as notify_e:
+                        log_err(f"代码模式超时退出通知失败: {notify_e}")
 
             # ---------- 任务触发 ----------
             for task in SCHEDULE_TASKS:

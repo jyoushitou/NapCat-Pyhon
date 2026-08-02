@@ -1,6 +1,7 @@
 # ===================== 命令系统 =====================
 # 仅主人可用，通过 ! 前缀触发，支持查看状态/管理记忆/手动操作等
-import asyncio, os
+
+import asyncio, os, time as _time
 from datetime import date
 from .config import MASTER_QQ, LISTEN_HOST, LISTEN_PORT_QQ, HEARTBEAT_INTERVAL, DS_MODEL, STICKER_ARCHIVE_DIR, CLIP_IMAGE_TAGS
 import botv.config as cfg
@@ -46,6 +47,8 @@ def build_cmd_help():
         "!usage         - 查看最近10次token用量和使用模型\n"
         "!uptime        - 查看机器人运行时长\n"
         "!ping          - 测试机器人是否在线\n"
+        "!code          - 开启代码模式（知识正确性优先于人设，30分钟无消息自动退出）\n"
+        "!code off      - 手动退出代码模式\n"
     )
 
 def format_status_detailed():
@@ -61,6 +64,11 @@ def format_status_detailed():
     lines.append(f"🖼️ CLIP: {'✅' if cfg.CLIP_ENABLED else '❌'}")
     lines.append(f"📅 chinesecalendar: {'✅ 已加载' if CHINESE_CALENDAR_OK else '⚠️ 未安装(降级weekday)'}")
     lines.append(f"🔑 搜图Token: {'✅ 已配置' if cfg.STICKER_API_ALAPI_TOKEN else '❌ 缺失'}")
+    if cfg.CODE_MODE:
+        elapsed = int(_time.time() - cfg.CODE_MODE_LAST_MSG_TIME) if cfg.CODE_MODE_LAST_MSG_TIME > 0 else 0
+        lines.append(f"🔧 代码模式: ✅ 开启中（{elapsed//60}分{elapsed%60}秒无消息，30分钟超时）")
+    else:
+        lines.append(f"🔧 代码模式: ⭕ 关闭")
     lines.append("")
     lines.append(f"🗂️ 对话对象数: {len(cfg.user_memory_pool)}")
     lines.append(f"🏷️ 全局关键词数: {len(cfg.global_keyword_set)}")
@@ -156,7 +164,7 @@ async def handle_command(text, uid, ws, is_group, gid):
             lines.append(f"  DS: {'✅' if cfg.DS_API_KEY else '❌'} | 豆包: {'✅' if cfg.DOUBAO_API_KEY else '❌'} | CLIP: {'✅' if cfg.CLIP_ENABLED else '❌'}")
             lines.append(f"  📅 {'工作日' if is_workday_today() else '休息日'} | 对话对象: {len(cfg.user_memory_pool)} | 关键词: {len(cfg.global_keyword_set)}")
             lines.append(f"  🖼️ 存档: {len(cfg.STICKER_DATA)}张 | 定时触发: {len(cfg.daily_trigger)}个")
-            lines.append(f"  💬 闲聊: {len(cfg.triggered_today)}/合")
+            lines.append(f"  💬 闲聊: {len(cfg.triggered_today)}/合 | 🔧 代码模式: {'✅开启' if cfg.CODE_MODE else '关闭'}")
             lines.append(f"  使用 !status all 查看详细")
             reply = "\n".join(lines)
 
@@ -391,6 +399,41 @@ async def handle_command(text, uid, ws, is_group, gid):
                 reply = "\n".join(lines)
         except Exception as e:
             reply = f"❌ 查询token用量失败: {e}"
+
+    elif cmd_name == "code":
+        # 检测是否带 off 参数（重复进入/退出防护）
+        is_off = len(parts) > 1 and parts[1].lower() == "off"
+
+        if is_off:
+            # 请求退出
+            if not cfg.CODE_MODE:
+                reply = "ℹ️ 当前不在代码模式，无需退出"
+            else:
+                cfg.CODE_MODE = False
+                cfg.CODE_MODE_LAST_MSG_TIME = 0
+                reply = "🔧 已退出代码模式，恢复人设回复"
+        else:
+            # 请求进入
+            if cfg.CODE_MODE:
+                # 已在代码模式：提示当前状态
+                if cfg.CODE_MODE_LAST_MSG_TIME > 0:
+                    elapsed = int(_time.time() - cfg.CODE_MODE_LAST_MSG_TIME)
+                    time_desc = f"{elapsed}秒" if elapsed < 60 else f"{elapsed//60}分{elapsed%60}秒"
+                    reply = (
+                        f"🔧 已在代码模式（距上次消息 {time_desc}）\n"
+                        "知识正确性优先，输入 !code off 可手动退出"
+                    )
+                else:
+                    reply = "🔧 已在代码模式，输入 !code off 可手动退出"
+            else:
+                # 正常开启
+                cfg.CODE_MODE = True
+                cfg.CODE_MODE_LAST_MSG_TIME = _time.time()
+                reply = (
+                    "🔧 已开启代码模式！\n"
+                    "知识正确性优先于角色人设，30分钟无消息将自动退出。\n"
+                    "输入 !code off 可手动退出。"
+                )
 
     else:
         reply = f"❌ 未知命令: {cmd_name}\n输入 !help 查看可用命令"

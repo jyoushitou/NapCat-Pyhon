@@ -82,7 +82,7 @@
 ### 6. 对话命令系统
 - 主人（MASTER_QQ）通过私聊发送 `!` 前缀命令查看/修改运行时参数。
 - 非主人发送的命令被忽略（返回 False 继续走 AI 对话）。
-- 支持 **21 个命令**：
+- 支持 **22 个命令**：
   - `!help` - 显示完整帮助列表
   - `!status` - 运行状态概览（DS/豆包/CLIP 状态、工作日、对话对象数、关键词数、存档数等）
   - `!status all` - 详细参数（WebSocket 地址、心跳间隔、消息去重缓存、chinesecalendar 状态、今天的日期/星期/工作日类型）
@@ -106,6 +106,8 @@
   - `!usage` - 最近 10 次 token 用量和使用模型（含合计统计）
   - `!uptime` - 机器人运行时长（从数据库第一条日志计算）
   - `!ping` - 测试机器人是否在线
+  - `!code` - 开启代码模式（知识正确性优先于人设，30分钟无消息自动退出）
+  - `!code off` - 手动退出代码模式
 
 ### 7. 消息发送优化（`botv/send.py`）
 - **`build_reply_message()` 核心函数**：
@@ -189,7 +191,7 @@ NapCat+Python/
 │   ├── memory.py             # 对话记忆与关键词管理：jieba分词、数据库CRUD、上下文构建（15轮+关键词+事件）
 │   ├── api.py                # DeepSeek + 豆包 双模型调用：asyncio.to_thread异步、2~3次重试、原始JSON保存、自动关键词补全
 │   ├── send.py               # 消息发送与选图策略：五行解析→文本+动作+图片→WebSocket发送（含0.5秒间隔、并发锁）
-│   ├── commands.py           # ! 命令系统：23个命令，主人才可调用，解析→执行→发结果
+│   ├── commands.py           # ! 命令系统：22个命令，主人才可调用，解析→执行→发结果
 │   ├── schedule.py           # 定时任务：7个场景+随机闲聊+生日祝福，chinesecalendar工作日判断，跨天自动初始化
 │   ├── heartbeat.py          # WebSocket 心跳保活：通用协程，每 15 秒 ping，只检测日志不处理
 │   ├── handler.py            # QQ 消息处理主循环：消息解析→去重→命令/表情包/AI回复→发送
@@ -382,7 +384,7 @@ pip install git+https://github.com/openai/CLIP.git
 | `botv/memory.py` | 对话记忆与关键词管理（jieba分词、数据库CRUD、上下文构建） | ✅ 模块注释 + 函数文档 + 行内注释 |
 | `botv/api.py` | DeepSeek + 豆包 双模型调用（异步重试、原始JSON保存、自动关键词补全） | ✅ 模块注释 + 函数文档 + 行内注释 |
 | `botv/send.py` | 消息发送与选图策略（五行解析→文本+动作+图片→WebSocket发送） | ✅ 模块注释 + 函数文档 + 行内注释 |
-| `botv/commands.py` | ! 命令系统（21个命令：help/status/task/memory/sticker/clip等） | ✅ 模块注释 + 函数文档 + 行内注释 |
+| `botv/commands.py` | ! 命令系统（22个命令：help/status/task/memory/sticker/clip等） | ✅ 模块注释 + 函数文档 + 行内注释 |
 | `botv/schedule.py` | 定时任务 + 工作日判断（7个场景、chinesecalendar、闲聊、生日祝福） | ✅ 模块注释 + 函数文档 + 行内注释 |
 | `botv/heartbeat.py` | WebSocket 心跳保活（通用协程，每15秒ping） | ✅ 模块注释 + 函数文档 + 行内注释 |
 | `botv/handler.py` | QQ 消息处理主循环（消息解析→命令/表情包/AI回复→发送） | ✅ 模块注释 + 函数文档 + 行内注释 |

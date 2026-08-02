@@ -55,6 +55,10 @@ async def build_reply_message(txt, uid, kws=None):
     if action:  # 有动作描述
         parts.append(("text", [{"type":"text","data":{"text":action}}]))  # 添加动作文本
     
+    # 代码模式：只发送文字不发送图片，保证完整详细的技术回答
+    if cfg.CODE_MODE:
+        log_api("[构建回复] 代码模式，跳过图片发送")
+        return parts
     # 用第三行关键词选图，如果没有则用jieba从对话+动作中提取
     if img_kw:  # AI提供了图片关键词
         log_api(f"[构建回复] 按AI关键词搜图(20纬度): {img_kw}")  # 日志记录

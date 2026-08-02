@@ -90,3 +90,8 @@ global_keyword_set=set()  # 全局关键词集合
 USER_STICKER_CACHE=defaultdict(list)  # 用户最近使用的QQ表情缓存
 USER_STICKER_ARCHIVE=defaultdict(list)  # 用户旧表情包存档
 STICKER_DATA={}  # 表情包数据 {hash: info_dict}
+
+# ===================== 代码模式状态 =====================
+CODE_MODE=False  # 代码模式：知识正确性优先于角色人设
+CODE_MODE_LAST_MSG_TIME=0  # 上次收到消息的时间戳（秒），用于30分钟超时自动退出
+CODE_MODE_TIMEOUT=1800  # 代码模式自动退出超时（秒）= 30分钟

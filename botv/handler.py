@@ -4,6 +4,7 @@
 import asyncio  # 异步IO
 import json  # JSON解析
 import os  # 文件路径操作
+import time as _time  # 时间戳（代码模式超时判断用）
 
 from .config import MASTER_QQ, LOCK_RELEASE_DELAY  # 主人QQ、锁释放延迟
 import botv.config as cfg  # 全局运行时变量
@@ -100,6 +101,10 @@ async def websocket_handle_qq(ws):
             text = await parse_message_content(d.get("message",""), uid)  # 解析消息内容
             if not text:  # 解析后文本为空
                 continue  # 跳过
+            
+            # 代码模式：每次收到消息更新最后活跃时间戳
+            if cfg.CODE_MODE:
+                cfg.CODE_MODE_LAST_MSG_TIME = _time.time()
             
             async with cfg.PROCESS_LOCK:  # 加消息处理锁
                 cfg.PROCESSED_MSG_IDS.append(mid)  # 记录已处理的消息ID

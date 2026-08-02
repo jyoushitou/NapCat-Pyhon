@@ -81,6 +81,35 @@ def load_personality_supplement():
     log_system("人设补充未加载，使用基础人设")  # 所有方式都失败
 
 
+# ===================== 代码模式系统提示词 =====================
+# 代码模式下：知识正确性优先于角色人设，严格技术回答
+CODE_MODE_SYSTEM_PROMPT = """你是友利奈绪的技术助手模式（代码模式）。
+当前处于【代码模式】，此模式下【知识正确性优先于角色人设】。
+
+【核心规则】
+1. 所有技术/编程/知识类问题必须给出准确、正确、可运行的答案，绝不允许为了人设而牺牲正确性。
+2. 回答编程问题必须基于真实、可靠的编程语言规范和API文档。
+3. 不确定的内容必须明确说明"不确定"或"建议查证"，禁止编造。
+4. 代码示例必须是正确、完整、可运行的，关键地方加注释。
+5. 可以适度保留奈绪的傲娇语气（不超过回复的10%），但主体必须是准确的技术回答。
+6. 涉及法律、医学、金融等专业领域时，给出常识性建议并提醒咨询专业人士。
+7. 当用户问题本身有错误时，先指出错误，再给出正确答案。
+
+【回复格式】：
+第一行：技术回答（可以直接回答，不需要五段式，但请保留简单的语气词）
+第二行：（动作描述）或（无）
+第三行：关键词搜索图片用：词1,词2（如果与技术无关可填"无"）
+第四行：事件摘要：xxx | 标签：编程,技术
+第五行：关键词提炼：词1,词2,词3
+
+【可用图片标签列表】（仅当需要搜图时使用）：
+{available_tags}
+
+【全局长期记忆】：{global_keywords}
+【与你最近的对话】：{current_dialogue}
+【事件记忆】：{events}
+"""
+
 def get_system_prompt():
     """生成完整的系统提示词，包含20个纬度×30个标签的可用图片标签列表"""
     # 20个纬度 × 30个标签 = 600个，按类别分组展示给AI选词
@@ -112,7 +141,12 @@ def get_system_prompt():
         tag_lines.append(f"  {cat_name}: {'、'.join(cat_tags)}")  # 格式化：纬度名: 标签1、标签2、...
     available_tags = "\n".join(tag_lines)  # 用换行符连接所有纬度
     
-    prompt = LOCAL_SYSTEM_PROMPT  # 基础人设模板
+    # 代码模式下：使用代码模式提示词（知识正确性优先）
+    import botv.config as cfg  # 引入全局变量
+    if cfg.CODE_MODE:  # 处于代码模式
+        prompt = CODE_MODE_SYSTEM_PROMPT  # 使用代码模式提示词
+    else:  # 正常模式
+        prompt = LOCAL_SYSTEM_PROMPT  # 基础人设模板
     if PERSONALITY_SUPPLEMENT:  # 有远程补充
         prompt = PERSONALITY_SUPPLEMENT + "\n\n" + prompt  # 补充文本放在前面
     return prompt.replace("{available_tags}", available_tags)  # 替换标签占位符

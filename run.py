@@ -16,23 +16,29 @@ REQUIRED_PACKAGES = [
     "pymysql",          # MySQL 数据库：存储聊天记录
     "jieba",            # 中文分词：自然语言处理
     "Pillow",           # 图片处理（PIL）：处理用户图片
-    "chinesecalendar",  # 中国节假日判断（可选，降级为 weekday）
     "aiohttp",          # HTTP API 服务器：提供外部接口
 ]
 
 # 可选依赖（安装失败不影响主流程）
 OPTIONAL_PACKAGES = [
+    "chinesecalendar",  # 中国节假日判断（可选，降级为 weekday）
     "torch",            # PyTorch：CLIP 模型需要
     "transformers",     # HuggingFace：CLIP 处理器需要
 ]
 
 # ===================== 函数定义 =====================
 def check_and_install(package_name, optional=False):
-    """检查包是否已安装，未安装则自动 pip install"""
-    # 特殊处理：Pillow 的 import 名是 PIL
-    import_name = package_name
-    if package_name == "Pillow" or package_name == "PIL":
-        import_name = "PIL"
+    """检查包是否已安装，未安装则优先用 Ubuntu apt 命令自动安装，失败回退 pip"""
+    # 特殊处理：某些 pip 包名 ≠ 导入模块名
+    IMPORT_NAME_MAP = {
+        "Pillow": "PIL",          # Pillow 的 import 名是 PIL
+        "PIL": "PIL",
+        "chinesecalendar": "chinese_calendar",  # pip 包名是 chinesecalendar，但 import 是 chinese_calendar
+        "pyyaml": "yaml",         # 备用
+        "beautifulsoup4": "bs4",  # 备用
+    }
+    import_name = IMPORT_NAME_MAP.get(package_name, package_name)
+    
     
     try:
         importlib.import_module(import_name)  # 尝试导入
@@ -40,16 +46,60 @@ def check_and_install(package_name, optional=False):
     except ImportError:
         pass  # 未安装，继续安装流程
     
+    # Python 包名 → Ubuntu apt 包名映射
+    APT_MAP = {
+        "websockets": "python3-websockets",   # WebSocket 服务器
+        "requests": "python3-requests",       # HTTP 请求
+        "urllib3": "python3-urllib3",         # HTTP 底层库
+        "pymysql": "python3-pymysql",         # MySQL 数据库
+        "jieba": "python3-jieba",             # 中文分词
+        "Pillow": "python3-pil",              # 图片处理（PIL）
+        "PIL": "python3-pil",
+        "aiohttp": "python3-aiohttp",         # HTTP API 服务器
+        "chinesecalendar": "python3-chinesecalendar",  # 中国节假日
+        "torch": "pytorch",                   # PyTorch（apt 通常没有，会回退 pip）
+        "transformers": "python3-transformers",  # HuggingFace（apt 通常没有，会回退 pip）
+    }
+    
     # 未安装，尝试自动安装
     tag = "[可选]" if optional else "[必需]"
     print(f"{tag} 正在安装 {package_name}...")
+    apt_pkg = APT_MAP.get(package_name)
+    
+    # ① 优先使用 Ubuntu apt 命令安装系统包
+    if apt_pkg:
+        try:
+            subprocess.check_call(  # 执行 apt-get install
+                ["sudo", "apt-get", "install", "-y", apt_pkg],
+                stdout=subprocess.DEVNULL,  # 丢弃标准输出
+                stderr=subprocess.DEVNULL   # 丢弃错误输出
+            )
+            # 安装后验证模块是否可用
+            if importlib.util.find_spec(import_name) is not None:
+                print(f"  ✅ {package_name} 安装成功（apt）")
+                return True
+        except Exception:
+            pass  # apt 失败，回退到 pip
+    
+                # ② apt 没有对应包或安装失败 → 回退到 pip install
+    # 使用 --break-system-packages 绕过 Ubuntu 24.04 的 PEP 668 限制
+    # （Ubuntu 23.04+ 默认禁止 pip 直接安装到系统 Python）
     try:
-        subprocess.check_call(  # 执行 pip install
-            [sys.executable, "-m", "pip", "install", package_name, "-q"],
+        # torch 特殊处理：默认源包含 CUDA 依赖，体积巨大（>800MB）且容易失败
+        # 改用官方 CPU 专用源，体积小（~200MB）更适合无 GPU 服务器
+        pip_cmd = [sys.executable, "-m", "pip", "install", package_name, "-q", "--break-system-packages"]
+        if package_name == "torch":
+            pip_cmd += ["--index-url", "https://download.pytorch.org/whl/cpu"]
+            print(f"  🔧 使用 CPU 版 PyTorch 源（无 GPU 服务器专用）...")
+        subprocess.check_call(
+            pip_cmd,
             stdout=subprocess.DEVNULL,  # 丢弃标准输出
             stderr=subprocess.DEVNULL   # 丢弃错误输出
         )
-        print(f"  ✅ {package_name} 安装成功")
+        # 安装后再次验证，防止 pip 返回码为 0 但模块实际不可用
+        if importlib.util.find_spec(import_name) is None:
+            raise ImportError(f"{package_name} 安装后验证失败：模块仍不可导入")
+        print(f"  ✅ {package_name} 安装成功（pip）")
         return True
     except Exception as e:
         if optional:
@@ -57,7 +107,7 @@ def check_and_install(package_name, optional=False):
             return False
         else:
             print(f"  ❌ {package_name} 安装失败: {e}")
-            print(f"  💡 请手动执行: pip install {package_name}")
+            print(f"  💡 请手动执行: sudo apt-get install {apt_pkg or package_name} 或 pip install {package_name}")
             return False
 
 def check_all_dependencies():
