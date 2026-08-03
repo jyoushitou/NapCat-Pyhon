@@ -25,17 +25,23 @@ def _extract_target_id(msgs):
     return user_content[:80] if user_content else ""  # 截断前80字符作为ID
 
 
-async def call_deepseek(msgs, retry=2):
-    """调用DeepSeek API，支持重试，返回回复文本或None"""
+async def call_deepseek(msgs, retry=2, max_tokens=None, target_id=None):
+    """调用DeepSeek API，支持重试，返回回复文本或None
+    max_tokens: 可选，覆盖默认输出长度（聊天默认200，代码模式2000；日记等长文场景调用方传入更大值）
+    target_id: 可选，显式指定目标ID（日记等场景无法从消息中提取时传入）"""
     log_api(f"[DS] 开始调用, model={DS_MODEL}, 消息数={len(msgs)}, key={'有' if cfg.DS_API_KEY else '无'}")  # 日志记录调用信息
     if not cfg.DS_API_KEY:  # 无API密钥
         log_api("[DS] 无API key，跳过")  # 日志记录
         return None  # 返回None
     h={"Authorization":f"Bearer {cfg.DS_API_KEY}","Content-Type":"application/json"}  # 请求头：Bearer认证
 
-    d={"model":DS_MODEL,"messages":msgs,"max_tokens":2000 if cfg.CODE_MODE else 200,"temperature":0.7}  # 请求体：模型、消息、最大token（代码模式扩大至2000，保证完整详细回复）
+    # 输出长度：调用方显式指定 max_tokens 时优先使用（日记等长文场景），否则走默认（代码模式2000/聊天200）
+    out_tokens = max_tokens if max_tokens is not None else (2000 if cfg.CODE_MODE else 200)
+    d={"model":DS_MODEL,"messages":msgs,"max_tokens":out_tokens,"temperature":0.7}  # 请求体：模型、消息、最大token（代码模式扩大至2000，保证完整详细回复）
     user_msg = _extract_user_msg(msgs)  # 提取用户消息
-    target_id = _extract_target_id(msgs)  # 提取目标ID
+    if not target_id:  # 未显式指定时才从消息中提取
+        target_id = _extract_target_id(msgs)  # 提取目标ID
+    target_id = (target_id or "")[:50]  # 截断，防止超过数据库 VARCHAR(50) 上限
     for a in range(retry):  # 重试循环
         try:
             log_api(f"[DS] 第{a+1}次请求...")  # 日志记录重试次数
@@ -74,11 +80,15 @@ async def call_deepseek(msgs, retry=2):
     return None  # 返回None
 
 
-async def call_doubao(msgs):
-    """调用豆包API，支持重试，失败时返回随机兜底回复"""
+async def call_doubao(msgs, max_tokens=None, target_id=None):
+    """调用豆包API，支持重试，失败时返回随机兜底回复
+    max_tokens: 可选，覆盖默认输出长度（聊天默认300，代码模式2000；日记等长文场景调用方传入更大值）
+    target_id: 可选，显式指定目标ID（日记等场景无法从消息中提取时传入）"""
     log_api(f"[豆包] 开始调用, model={DOUBAO_MODEL}, key={'有' if cfg.DOUBAO_API_KEY else '无'}")  # 日志记录调用信息
     user_msg = _extract_user_msg(msgs)  # 提取用户消息
-    target_id = _extract_target_id(msgs)  # 提取目标ID
+    if not target_id:  # 未显式指定时才从消息中提取
+        target_id = _extract_target_id(msgs)  # 提取目标ID
+    target_id = (target_id or "")[:50]  # 截断，防止超过数据库 VARCHAR(50) 上限
     if not cfg.DOUBAO_API_KEY:  # 无API密钥
         log_api("[豆包] 无API key，返回默认回复")  # 日志记录
         fallback = random.choice(["哼(扭头)","才不理你(抱手)","切(翻白眼)"])  # 随机选择兜底回复
@@ -86,7 +96,9 @@ async def call_doubao(msgs):
         return fallback  # 返回兜底回复
     h={"Authorization":f"Bearer {cfg.DOUBAO_API_KEY}","Content-Type":"application/json"}  # 请求头：Bearer认证
     temp = 0.2 if cfg.CODE_MODE else 0.7  # 代码模式降低温度以提高准确性
-    d={"model":DOUBAO_MODEL,"messages":msgs,"max_tokens":2000 if cfg.CODE_MODE else 300,"temperature":temp}  # 请求体（代码模式扩大max_tokens至2000，保证完整详细回复）
+    # 输出长度：调用方显式指定 max_tokens 时优先使用（日记等长文场景），否则走默认（代码模式2000/聊天300）
+    out_tokens = max_tokens if max_tokens is not None else (2000 if cfg.CODE_MODE else 300)
+    d={"model":DOUBAO_MODEL,"messages":msgs,"max_tokens":out_tokens,"temperature":temp}  # 请求体（代码模式扩大max_tokens至2000，保证完整详细回复）
     for a in range(MAX_RETRY_TIMES):  # 重试循环（最大重试次数）
         try:
             log_api(f"[豆包] 第{a+1}次请求...")  # 日志记录重试次数

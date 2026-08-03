@@ -7,7 +7,7 @@ import asyncio  # 异步 IO：定时器循环
 import random  # 随机偏移和选择
 import os  # 文件路径操作
 import time as _time  # 时间戳（代码模式超时判断用）
-from datetime import datetime, time, date  # 时间处理
+from datetime import datetime, time, date, timedelta  # 时间处理
 from .config import MASTER_QQ, CST, IMAGE_DIR  # 配置常量
 import botv.config as cfg  # 全局运行时变量
 from .log import log_system, log_err  # 日志
@@ -16,6 +16,7 @@ from .memory import add_target_memory  # 记忆管理
 from .send import send_short_reply, send_private_msg  # 消息发送
 from .image import fetch_and_save_acg_image, search_local_image_by_tags, get_best_image  # 图片处理
 from .utils import encode_image_base64, make_image_msg, parse_ai_reply  # 工具函数
+from .diary import generate_diary  # 日记生成
 
 # 工作日判断（chinesecalendar 可选）
 try:
@@ -141,6 +142,22 @@ async def cycle_task_run():
                 log_system(f"其中主动闲聊: {[f'{m//60:02d}:{m%60:02d}' for m in cfg.daily_chat_trigger_times]}")
                 _last_today = today
                 log_system(f"定时任务初始化完成，共 {len(cfg.task_trigger_minute)} 个任务点")
+
+                        # ---------- 凌晨3点自动生成昨天日记并存入数据库 ----------
+            # 3点时昨天的数据已完整，AI生成日记后保存到 diaries 表（不推送）
+            # 查看用 !diary <日期> 命令，从数据库读取
+            if now.hour == 3 and now.minute == 0:
+                prev_date = today - timedelta(days=1)
+                diary_key = f"diary_{prev_date}"
+                if diary_key not in cfg.daily_trigger:
+                    cfg.daily_trigger.add(diary_key)  # 先标记，防重复
+                    log_system(f"定时:自动写日记({prev_date})")
+                    try:
+                        # generate_diary 内部会保存到 diaries 表，若已存在则直接读取不重复生成
+                        diary_text = await generate_diary(str(MASTER_QQ), prev_date.isoformat())
+                        log_system(f"自动日记({prev_date}) 已生成并保存到数据库（{len(diary_text)}字）")
+                    except Exception as diary_e:
+                        log_err(f"自动日记生成失败: {diary_e}")
 
             # ---------- 生日检查 ----------
             birthday_flag_key = f"birthday_{today.year}"

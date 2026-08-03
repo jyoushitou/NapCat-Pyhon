@@ -33,10 +33,10 @@ async def main():
         8. 进入主循环：启动心跳 + 定时任务 + WebSocket 服务器
     """
     # ===================== 初始化各模块 =====================
-    load_memories()  # 从数据库加载对话记忆和全局关键词到内存
+    reload_api_keys()  # 从数据库重新加载所有 API 密钥（必须先于 load_memories，因为追溯日记需要 API key）
+    load_memories()  # 从数据库加载对话记忆和全局关键词到内存（可能触发日记追溯生成）
     init_sticker_archive()  # 初始化表情包存档目录，迁移旧版 JSON 索引
     init_clip_model()  # 加载 CLIP 模型（CPU），失败不影响运行
-    reload_api_keys()  # 从数据库重新加载所有 API 密钥
     load_personality_supplement()  # 加载人设补充文本（远程 > 本地）
     
     # 确保 ACG 图片表存在（用于缓存 ACG 二次元图片）
@@ -60,6 +60,24 @@ async def main():
     except Exception as e:
         log_err(f"建表失败: {e}")
     
+    # 确保 diaries 日记表存在（用于存储自动生成的日记）
+    try:
+        c = get_cursor()
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS diaries (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                target_id VARCHAR(50) NOT NULL,
+                diary_date DATE NOT NULL,
+                content TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_target_date (target_id, diary_date)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+        c.connection.commit()
+        log_system("diaries 表已就绪")
+    except Exception as e:
+        log_err(f"创建 diaries 表失败: {e}")
+
     # 确保 ai_raw_responses 表有 token 用量字段（数据库迁移）
     try:
         c = get_cursor()
@@ -76,6 +94,7 @@ async def main():
         log_err(f"升级ai_raw_responses表失败: {e}")
     
     cfg.PROCESS_LOCK = asyncio.Lock()  # 初始化消息处理锁（防止并发处理消息）
+    cfg.shutdown_event = asyncio.Event()  # 初始化退出事件（!exit 命令触发）
     log_system("初始化完成(CLIP识图版)")
     
     # ===================== 启动 API 服务器 =====================
@@ -86,13 +105,30 @@ async def main():
         log_err(f"API 服务器启动失败: {e}")
         api_runner = None  # API 服务器启动失败不影响主流程
     
-    # ===================== 主循环 =====================
+        # ===================== 主循环 =====================
     while True:
+        # 收到 !exit 命令后安全退出
+        if getattr(cfg, "shutdown_event", None) and cfg.shutdown_event.is_set():
+            log_system("收到退出命令，正在安全关闭...")
+            last_ws = cfg.active_ws_qq
+            if last_ws and not getattr(last_ws, "closed", False):  # 关闭 WebSocket 连接
+                try:
+                    await last_ws.close()
+                except Exception:
+                    pass
+            if api_runner:  # 清理 API 服务器
+                try:
+                    await api_runner.cleanup()
+                except:
+                    pass
+            log_system("已安全退出")
+            return  # 退出 main()，run.py 的 _start() 结束后整个程序结束
+
         hb = asyncio.create_task(heartbeat_monitor("QQ", cfg.active_ws_qq))  # 启动心跳监控
         cyc = asyncio.create_task(cycle_task_run())  # 启动定时任务循环
         try:
             async with websockets.serve(websocket_handle_qq, LISTEN_HOST, LISTEN_PORT_QQ):  # 启动 WebSocket 服务器
-                await asyncio.Future()  # 保持运行直到被取消
+                await cfg.shutdown_event.wait()  # 保持运行，等待 !exit 命令触发退出
         except Exception as e:
             log_err(f"重启:{e}")  # 异常时记录日志并自动重启
         finally:
@@ -103,4 +139,8 @@ async def main():
                     await api_runner.cleanup()
                 except:
                     pass
+            # 检查是否因为退出命令而结束（跳过5秒重启等待）
+            if getattr(cfg, "shutdown_event", None) and cfg.shutdown_event.is_set():
+                log_system("已安全退出")
+                return  # 退出 main()，整个程序结束
             await asyncio.sleep(5)  # 等待 5 秒后重启

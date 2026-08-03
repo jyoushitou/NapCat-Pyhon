@@ -95,3 +95,6 @@ STICKER_DATA={}  # 表情包数据 {hash: info_dict}
 CODE_MODE=False  # 代码模式：知识正确性优先于角色人设
 CODE_MODE_LAST_MSG_TIME=0  # 上次收到消息的时间戳（秒），用于30分钟超时自动退出
 CODE_MODE_TIMEOUT=1800  # 代码模式自动退出超时（秒）= 30分钟
+
+# ===================== 退出程序状态 =====================
+shutdown_event=None  # 退出事件（main.py 启动时初始化为 asyncio.Event()，!exit 命令触发）

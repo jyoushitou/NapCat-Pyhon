@@ -145,6 +145,63 @@ def check_all_dependencies():
     return all_ok
 
 
+# ===================== 日记功能自检（启动追溯） =====================
+# 启动时检查 diaries 表是否为空，若为空则追溯最近7天有事件记录的日期，
+# 调用 AI 生成日记并写入 diaries 表，确保日记功能有历史数据可展示/测试
+
+async def check_diary():
+    """
+    日记功能自检：
+    1. 确保 diaries 表存在（main.py 启动时也会创建，这里先建避免自检报错）
+    2. 若 diaries 表无任何历史日记 → 调用 diary.py 的 generate_missing_7day_diaries()
+       追溯最近有事件记录的日期（最多7天），逐天生成日记并写入 diaries 表
+    3. 生成后打印验证日志，确认日记功能正常
+    """
+    try:
+        # 延迟导入，避免循环依赖
+        from botv.db import get_cursor
+        from botv.config import MASTER_QQ
+        from botv.diary import generate_missing_7day_diaries
+        from botv.log import log_system
+
+        tid = str(MASTER_QQ)
+
+        # ---- 1. 确保 diaries 表存在 ----
+        c = get_cursor()
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS diaries (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                target_id VARCHAR(50) NOT NULL,
+                diary_date DATE NOT NULL,
+                content TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_target_date (target_id, diary_date)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+        c.connection.commit()
+
+        # ---- 2. 调用统一的追溯生成函数 ----
+        # 若 diaries 表已有日记或 events 表无记录，函数内部会自动跳过
+        generated, skipped = await generate_missing_7day_diaries(tid)
+
+        # ---- 3. 输出自检结果 ----
+        if generated:
+            log_system(f"日记自检通过 ✅ 本次追溯生成 {len(generated)} 篇日记: {', '.join(generated)}")
+            if skipped:
+                log_system(f"  跳过 {len(skipped)} 篇: {', '.join(skipped)}")
+        elif skipped:
+            log_system(f"日记自检完成：有事件记录但生成失败/跳过 {len(skipped)} 篇")
+        else:
+            log_system("日记自检：无追溯生成（已有日记或 events 无记录，跳过不影响启动）")
+
+        # ---- 4. 验证：查询 diaries 表确认写入成功 ----
+        c.execute("SELECT COUNT(*) AS n FROM diaries WHERE target_id=%s", (tid,))
+        total = c.fetchone()["n"] or 0
+        log_system(f"日记自检：{tid} 当前共有 {total} 篇日记")
+    except Exception as e:
+        log_system(f"日记自检跳过（非致命错误）: {e}")
+
+
 # ===================== 启动入口 =====================
 import asyncio  # 异步 IO：运行主函数
 
@@ -152,7 +209,14 @@ if __name__ == "__main__":  # 直接运行本文件时
     # 先检查依赖
     if not check_all_dependencies():
         sys.exit(1)  # 依赖缺失 → 退出
-    # 依赖检查通过后再导入主模块（延迟导入，避免依赖缺失时崩溃）
+        # 依赖检查通过后再导入主模块（延迟导入，避免依赖缺失时崩溃）
     from botv.main import main
-    # 启动机器人
-    asyncio.run(main())
+    # 启动机器人（先运行主程序，上线消息发出10分钟后再追溯日记）
+    async def _start():
+        main_task = asyncio.create_task(main())  # 启动主程序（异步，不阻塞后续延迟任务）
+        # 延迟10分钟再追溯日记：确保 API key 已从数据库加载、上线消息已发出、CLIP模型已就绪
+        # 平时日记只在凌晨3点由 schedule.py 的定时任务生成，这里仅做历史补录
+        await asyncio.sleep(600)  # 600秒=10分钟
+        await check_diary()       # 日记追溯：若 diaries 表为空则补录最近7天有事件记录的日期
+        await main_task           # 等待主程序退出
+    asyncio.run(_start())

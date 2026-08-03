@@ -14,6 +14,7 @@ from .send import send_private_msg, send_group_msg
 from .image import get_best_image, fetch_and_save_acg_image
 from .utils import make_image_msg
 from .api import get_character_reply
+from .diary import generate_diary, get_diary_overview, get_raw_events_text
 from datetime import datetime
 
 # 主人通过私聊发命令查看/修改运行时参数
@@ -49,7 +50,12 @@ def build_cmd_help():
         "!ping          - 测试机器人是否在线\n"
         "!code          - 开启代码模式（知识正确性优先于人设，30分钟无消息自动退出）\n"
         "!code off      - 手动退出代码模式\n"
-    )
+        "!diary          - 查看今天的日记（AI生成）\n"
+        "!diary <日期>   - 查看指定日期日记，如 !diary 2026-07-15\n"
+        "!diary list [天数] - 最近几天日记概览（默认7天）\n"
+        "!diary raw <日期>  - 查看指定日期的原始事件记录\n"
+        "!exit / !quit    - 安全退出程序（停止所有服务）\n"
+        )
 
 def format_status_detailed():
     """格式化详细状态信息：配置、API、记忆、定时任务等"""
@@ -434,6 +440,76 @@ async def handle_command(text, uid, ws, is_group, gid):
                     "知识正确性优先于角色人设，30分钟无消息将自动退出。\n"
                     "输入 !code off 可手动退出。"
                 )
+
+    elif cmd_name in ("exit", "quit"):
+        # 安全退出程序：设置退出事件，main.py 主循环会检测并清理退出
+        if not getattr(cfg, "shutdown_event", None) or not cfg.shutdown_event.is_set():
+            reply = "🛑 程序退出中..."
+            # 先回送确认消息（使用当前 ws 连接发送）
+            msg = [{"type": "text", "data": {"text": reply}}]
+            if is_group:
+                await send_group_msg(gid, msg, ws)
+            else:
+                await send_private_msg(uid, msg, ws)
+            log_system(f"[!exit] 收到退出命令，正在设置退出事件")
+            # 触发退出事件——这会中断主循环中的 shutdown_event.wait() 并触发清理退出
+            cfg.shutdown_event.set()
+            # 再等 800ms 让消息成功发送出去，然后返回 True
+            await asyncio.sleep(0.8)
+            log_system(f"[!exit] 退出事件已触发，程序即将退出")
+            return True  # 直接返回，避免主程序关闭连接后再发消息导致异常
+        else:
+            reply = "ℹ️ 程序已在退出中..."
+            log_system(f"[!exit] 重复收到退出命令")
+
+    elif cmd_name == "diary":
+        # 日记功能：生成/查看奈绪视角的每日日记
+        target = str(MASTER_QQ)  # 默认为主人生成日记（events表存的主人ID）
+        if len(parts) > 1:
+            sub = parts[1].lower()
+            if sub == "list":
+                # !diary list [天数] - 最近几天日记概览
+                days = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 7
+                days = min(max(days, 1), 30)
+                reply = await get_diary_overview(target, days)
+            elif sub == "raw":
+                # !diary raw <日期> - 查看原始事件记录
+                if len(parts) > 2:
+                    try:
+                        datetime.strptime(parts[2], "%Y-%m-%d")
+                        reply = get_raw_events_text(target, parts[2])
+                    except ValueError:
+                        reply = "❌ 日期格式错误，请用 YYYY-MM-DD 格式，如 !diary raw 2026-07-15"
+                else:
+                    reply = "用法: !diary raw <YYYY-MM-DD>"
+            else:
+                # !diary <日期> - 查看指定日期的日记
+                # !diary force <日期> - 强制重新生成（覆盖旧版bug产生的截断内容）
+                force_regen = False
+                date_arg = parts[1]
+                if date_arg.lower() == "force" and len(parts) > 2:
+                    force_regen = True
+                    date_arg = parts[2]
+                try:
+                    datetime.strptime(date_arg, "%Y-%m-%d")
+                    d = date_arg
+                    diary_text = await generate_diary(target, d, force=force_regen)
+                    prefix = f"📖 {d} 的日记（已重新生成）：\n" if force_regen else f"📖 {d} 的日记：\n"
+                    reply = prefix + diary_text
+                except ValueError:
+                    reply = (
+                        "❌ 无法识别的参数。用法：\n"
+                        "  !diary                  - 今天的日记\n"
+                        "  !diary <YYYY-MM-DD>     - 指定日期的日记\n"
+                        "  !diary force <YYYY-MM-DD> - 强制重新生成指定日期日记\n"
+                        "  !diary list [天数]       - 最近几天概览\n"
+                        "  !diary raw <YYYY-MM-DD> - 原始事件记录"
+                    )
+        else:
+            # !diary - 今天的日记
+            d = date.today().isoformat()
+            diary_text = await generate_diary(target, d)
+            reply = f"📖 {d} 的日记：\n{diary_text}"
 
     else:
         reply = f"❌ 未知命令: {cmd_name}\n输入 !help 查看可用命令"

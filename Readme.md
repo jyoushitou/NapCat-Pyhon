@@ -1,4 +1,4 @@
-# 友利奈绪 QQ 机器人 v3.0 —— CLIP 视觉识图 + 简短动作回复 + HTTP API 服务 + 代码模式
+# 友利奈绪 QQ 机器人 v4.0 —— CLIP 视觉识图 + 简短动作回复 + HTTP API 服务 + 代码模式 + AI 日记系统
 
 基于 **NapCat** 的 QQ 收发，**Python** 作为后端，调用 **DeepSeek** 网络 API 为主模型、**豆包** 网络 API 为备用模型，使用 **OpenAI CLIP (ViT-B/32, CPU)** 进行本地图片识别打标存档的 QQ 聊天机器人。
 
@@ -8,7 +8,7 @@
 
 ### 0. MySQL 数据库存储
 - 使用 MySQL 替代 JSON 文件存储 + txt 日志 + 环境变量密钥。
-- 数据库共 **8 张表**：`logs`、`api_keys`、`global_keywords`、`user_memory`、`images`、`events`、`ai_raw_responses`、`acg_images`。
+- 数据库共 **10 张表**：`logs`、`api_keys`、`global_keywords`、`user_memory`、`images`、`events`、`ai_raw_responses`、`acg_images`、`diaries`。
 - 默认连接 `192.168.0.50:3306`，数据库 `TomoriNaoBotData`，用户 `TomoriNaoBot`。
 - 日志、对话记忆、全局关键词、API 密钥全部从数据库读写，重启后自动加载。
 - 表情包存档（图片文件 + JSON 索引）仍保留本地文件存储（`sticker_archive/` 目录）。
@@ -62,7 +62,26 @@
   - 含"关键词提炼" → 提炼关键词
   - 不满足以上条件的中间行 → 额外对话内容追加到第一行
 
-### 5. 定时任务 + 随机偏移
+### 5. AI 日记系统（v4.0 新增 ⭐ `botv/diary.py`）
+- **日记生成**：调用 AI 以奈绪视角写日记（傲娇毒舌 + 温柔），数据源为当天 `events` 表事件记录 + `ai_raw_responses` 表对话片段。
+- **双模型支持**：优先 DeepSeek，失败自动切换豆包，返回文本自动清理格式行并限制 500 字内。
+- **数据库持久化**：日记存入 `diaries` 表（按 target_id + diary_date 唯一），已存在的日记直接读取不重复生成。
+- **内存缓存**：生成结果缓存 10 分钟（最多 20 条），避免高频查看时重复调用 AI。
+- **无素材降级**：当天无事件记录时返回友好提示；无 API 密钥时直接返回事件列表作为简易纪要。
+- **查看命令**（仅主人可用）：
+  - `!diary` — 查看今天的日记（自动生成）
+  - `!diary <YYYY-MM-DD>` — 查看指定日期的日记（自动生成）
+  - `!diary list [天数]` — 最近 N 天日记概览（默认 7，上限 30，显示"日记已生成/有事件/空"状态）
+  - `!diary raw <YYYY-MM-DD>` — 查看指定日期的**原始事件记录**（不打 AI）
+- **启动追溯自检**（`run.py` 的 `check_diary()`）：
+  - **上线消息发出 10 分钟后**再执行追溯（`run.py` 中 `asyncio.sleep(600)` 延迟），确保 API 密钥已从数据库加载、上线消息已发出、CLIP 模型已就绪
+  - 检查 `diaries` 表是否为空，若为空 → 追溯最近 7 天有事件记录的日期（`generate_missing_7day_diaries()`）
+  - 调用 `generate_diary()` 为最多前 3 个有事件的日期生成日记并写入数据库
+  - 打印日志验证：`日记自检通过 ✅ 日记功能正常工作（共 N 篇）`
+  - 已有日记时自动跳过，不重复生成
+  - **日常日记仅在凌晨 3 点**由定时任务（`schedule.py`）自动生成，启动追溯仅做历史补录
+
+### 6. 定时任务 + 随机偏移
 - **7 个预设场景**：催起床、周末吐槽赖床、提醒点外卖、叮嘱午睡、提醒起身、提醒晚餐、催睡觉。
 - **随机偏移 ±10 分钟**，避免机械感。
 - **智能起床时间**：使用 `chinesecalendar` 模块判断中国法定工作日/节假日，**工作日 7:30** 叫起床，**周末/法定节假日 8:30** 叫起床（国庆、春节等假期自动延后，调休上班日自动提前）。
@@ -75,14 +94,15 @@
 - **生日祝福**：
   - 9月6日 12:00 — 主人生日（由主人设定），自动发送生日祝福并附带生日相关图片
   - 11月13日 8:00 — 奈绪生日（Charlotte 角色生日），自动发送祝福并附带奈绪/夏洛特相关图片或 ACG 图
+- **自动写日记（凌晨3点）**：每天凌晨 3:00 自动为**昨天**生成奈绪视角日记（基于当天 events + 对话记录），保存到 `diaries` 表（不主动推送），使用 `!diary <日期>` 命令随时查看。
 - **跨天自动初始化**：每天首次运行清空 `daily_trigger`、`triggered_today`，重新计算当天所有任务触发时刻和闲聊时间点（`_calc_day_tasks`）。
 - **任务执行防重复**：触发前先标记 `daily_trigger.add(key)`，即使异常也不会重复触发同一任务。
 - **每个定时任务使用随机自然提示**：催起床/催睡觉/提醒吃饭等场景各有 2~3 种不同的 Prompt 模板，每次随机选一个，让 AI 每次说不同的话而不是固定回复。
 
-### 6. 对话命令系统
+### 7. 对话命令系统
 - 主人（MASTER_QQ）通过私聊发送 `!` 前缀命令查看/修改运行时参数。
 - 非主人发送的命令被忽略（返回 False 继续走 AI 对话）。
-- 支持 **22 个命令**：
+- 支持 **26 个命令**：
   - `!help` - 显示完整帮助列表
   - `!status` - 运行状态概览（DS/豆包/CLIP 状态、工作日、对话对象数、关键词数、存档数等）
   - `!status all` - 详细参数（WebSocket 地址、心跳间隔、消息去重缓存、chinesecalendar 状态、今天的日期/星期/工作日类型）
@@ -108,8 +128,12 @@
   - `!ping` - 测试机器人是否在线
   - `!code` - 开启代码模式（知识正确性优先于人设，30分钟无消息自动退出）
   - `!code off` - 手动退出代码模式
+  - `!diary` - 查看今天的日记（AI 生成奈绪视角日记）
+  - `!diary <日期>` - 查看指定日期日记，如 `!diary 2026-07-15`
+  - `!diary list [天数]` - 最近几天日记概览（默认 7 天，上限 30 天）
+  - `!diary raw <日期>` - 查看指定日期的原始事件记录（不调用 AI）
 
-### 7. 消息发送优化（`botv/send.py`）
+### 8. 消息发送优化（`botv/send.py`）
 - **`build_reply_message()` 核心函数**：
   1. 解析 AI 回复五行格式 → 分割为 (dialog, action, img_kw, event, refined_kw)
   2. 有对话内容 → 添加文本消息段
@@ -125,14 +149,14 @@
 - **`send_sticker_private/group()` 表情包发送**：调用 `select_best_sticker()` → 文件路径用 `make_image_msg()` 构建 NapCat 图片消息，ID 字符串用 `face` 类型消息。
 - **`make_image_msg()` 统一图片消息构建**：将本地路径转为 NapCat 绝对路径格式 `[{"type":"image","data":{"file":"绝对路径"}}]`。
 
-### 8. 心跳保活（`botv/heartbeat.py`）
+### 9. 心跳保活（`botv/heartbeat.py`）
 - **通用心跳协程** `heartbeat_monitor(label, ws_ref)`：
   - 每 `HEARTBEAT_INTERVAL=15` 秒发送一次 WebSocket ping 帧
   - `label` 参数用于日志区分（如 'QQ'）
   - `ws_ref` 是全局变量的引用（如 `cfg.active_ws_qq`），每次循环重新读取以获取最新连接
   - 只检测不处理：ping 失败只记日志，不主动关闭连接，由主循环处理重连逻辑
 
-### 9. 日志与容错（`botv/log.py` + `botv/db.py`）
+### 10. 日志与容错（`botv/log.py` + `botv/db.py`）
 - **五级日志**：系统（初始化/定时任务等）、接收（收到的消息）、发送（发出去的内容）、接口（API 调用/图片处理/CLIP）、异常（错误捕获）
 - **双写**：控制台 `print()` + MySQL 数据库 `logs` 表，数据库写入失败不影响主流程（`try/except pass`）
 - **`get_recent_logs(limit)`**：从数据库按 id DESC 查询，反转使时间正序返回，带 `[时间] [级别] 内容` 格式
@@ -147,13 +171,13 @@
 - **自动建表和迁移**：启动时自动创建 `acg_images` 表；自动检查 `ai_raw_responses` 表的 token 字段，不存在时 ALTER TABLE
 - **`get_recent_usage(limit)`**：查询最近 N 次成功调用的 token 用量统计，用于 `!usage` 命令
 
-### 10. 事件记忆系统（`botv/db.py`）
+### 11. 事件记忆系统（`botv/db.py`）
 - **`add_event_to_db(tid, event_summary, tags)`**：从对话中提取重要事件存入 `events` 表，每个对象最多保留 20 条，超出时删除最旧记录
 - **`load_events_from_db(tid, tag_keywords=None, limit=5)`**：按目标 ID + 可选的标签关键词过滤（最多 3 个 LIKE 条件），返回 `[(event_summary, tags), ...]`
 - **注入提示词**：在 `memory.py` 的 `build_memory_context()` 中，按当前对话关键词过滤并注入最近事件记忆，让 AI 记住用户的重要日程
 - **闲聊关联**：定时闲聊触发时优先从数据库加载最近 5 条事件作为话题传递给 AI，让闲聊更自然
 
-### 11. HTTP API 服务器（v2.0 新增 ⭐ `botv/api_server.py`）
+### 12. HTTP API 服务器（v2.0 新增 ⭐ `botv/api_server.py`）
 - 基于 `aiohttp` 的异步 HTTP 服务器，监听端口 **60908**，共享 `aiohttp.ClientSession`
 - 所有接口需 **Bearer Token** 验证（自动生成 32 位字母数字字符串，存入数据库 `api_keys` 表 `API_SERVER_TOKEN` 行）
 - 认证中间件统一使用 `hmac.compare_digest` 安全比较，避免时序攻击
@@ -174,13 +198,14 @@
 
 ```
 NapCat+Python/
-├── run.py                    # 入口文件，python run.py 启动
+
+├── run.py                    # 入口文件，python run.py 启动（上线10分钟后追溯补录日记，平时日记由凌晨3点定时任务生成）
 ├── README.md                 # 项目说明文档
 ├── botv.py                   # 旧版单文件（v1.x），包含所有函数和运行逻辑，已归档
 ├── botv/                     # v2.0 模块化功能包
 │   ├── __init__.py           # 模块入口（导向 config，避免循环依赖）
 │   ├── config.py             # 配置常量 + 全局运行时变量（WebSocket地址、数据库配置、超时、所有状态变量）
-│   ├── db.py                 # 数据库连接池（连接池 5~20 个连接）、8 张表 CRUD 操作（含自动建表）
+│   ├── db.py                 # 数据库连接池（连接池 5~20 个连接）、9 张表 CRUD 操作（含自动建表）
 │   ├── log.py                # 日志系统：控制台 print() + MySQL logs 表双写，五级日志
 │   ├── utils.py              # 通用工具：图片下载(base64/url)、base64编码、AI回复五行格式解析(parse_ai_reply)
 │   ├── clip.py               # CLIP 模型加载（ViT-B/32 CPU）+ 图片多标签分析（约200候选标签，子线程推理）
@@ -190,9 +215,10 @@ NapCat+Python/
 │   ├── personality_supplement.txt  # 本地人设补充文件（可选）
 │   ├── memory.py             # 对话记忆与关键词管理：jieba分词、数据库CRUD、上下文构建（15轮+关键词+事件）
 │   ├── api.py                # DeepSeek + 豆包 双模型调用：asyncio.to_thread异步、2~3次重试、原始JSON保存、自动关键词补全
+│   ├── diary.py              # AI 日记系统（v4.0 新增）：收集 events + 对话素材 → AI 生成奈绪视角日记 → diaries 表 + 缓存
 │   ├── send.py               # 消息发送与选图策略：五行解析→文本+动作+图片→WebSocket发送（含0.5秒间隔、并发锁）
-│   ├── commands.py           # ! 命令系统：22个命令，主人才可调用，解析→执行→发结果
-│   ├── schedule.py           # 定时任务：7个场景+随机闲聊+生日祝福，chinesecalendar工作日判断，跨天自动初始化
+│   ├── commands.py           # ! 命令系统：26个命令（含 4 个日记命令），主人才可调用，解析→执行→发结果
+│   ├── schedule.py           # 定时任务：7个场景+随机闲聊+生日祝福+凌晨3点自动写日记，chinesecalendar工作日判断，跨天自动初始化
 │   ├── heartbeat.py          # WebSocket 心跳保活：通用协程，每 15 秒 ping，只检测日志不处理
 │   ├── handler.py            # QQ 消息处理主循环：消息解析→去重→命令/表情包/AI回复→发送
 │   ├── api_server.py         # HTTP API 服务器：aiohttp 端口 60908，Bearer Token认证，8个REST接口
@@ -205,7 +231,7 @@ NapCat+Python/
 
 ## 数据库建表
 
-提前创建数据库及 8 张表：
+提前创建数据库及 10 张表：
 
 ```sql
 CREATE DATABASE IF NOT EXISTS TomoriNaoBotData;
@@ -281,6 +307,16 @@ CREATE TABLE ai_raw_responses (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- acg_images 表由程序启动时自动创建，结构与 images 表一致，用于缓存ACG二次元图片
+
+-- diaries 日记表（程序启动时也会自动创建）：存储AI生成的奈绪视角日记
+CREATE TABLE diaries (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    target_id VARCHAR(50) NOT NULL COMMENT '日记所属人（主QQ号）',
+    diary_date DATE NOT NULL COMMENT '日记对应的日期',
+    content TEXT COMMENT '日记正文（AI生成）',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_target_date (target_id, diary_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
 ---
@@ -312,20 +348,29 @@ pip install git+https://github.com/openai/CLIP.git
    ```bash
    python run.py
    ```
-5. 程序启动时自动执行以下初始化流程（`main.py` 的 `async def main()`）：
+5. 程序启动时自动执行以下初始化流程（`run.py` 的 `check_diary()` + `main.py` 的 `async def main()`）：
    - **日志系统初始化**：设置 MySQL 数据库日志表
    - **加载对话记忆**：从 MySQL 加载所有对话历史到内存 deque
    - **加载全局关键词**：从 MySQL 加载关键词列表
    - **初始化图片系统**：创建 `images/` 目录，迁移旧版 JSON 索引到新库
-   - **加载 API 密钥**：从 MySQL `api_keys` 表加载所有密钥
+
+   - **加载 API 密钥**：从 MySQL `api_keys` 表加载所有密钥（先于记忆加载，确保日记生成时 key 可用）
    - **加载 CLIP 模型**：检查并加载 CLIP ViT-B/32（CPU），约 1~3 秒
    - **加载人设补充**：远程 URL 拉取 → 失败则加载本地 `personality_supplement.txt`
-   - **创建 acg_images 表**：自动创建并检查 token 字段
+   - **日记功能启动追溯**（v4.0 新增）：检查 `diaries` 表是否为空 → 为空则追溯最近 7 天有事件记录的日期 → 调用 AI 生成最多 3 篇测试日记写入数据库 → 验证日志
    - **启动 HTTP API 服务器**：监听 `0.0.0.0:60908`，自动生成 API Token
    - **启动 WebSocket 服务**：监听 `0.0.0.0:3001`，等待 QQ 客户端连接
    - **启动心跳监控**：每 15 秒发送 ping 帧检测连接
-   - **启动定时任务循环**：7 个场景 + 随机闲聊 + 生日祝福
+   - **启动定时任务循环**：7 个场景 + 随机闲聊 + 生日祝福 + 凌晨 3 点自动写日记
    - **启动上线检测**：连接成功后向主人发送上线提示（文字 + ACG 图片）
+
+启动时会看到类似日记自检日志：
+```
+日记自检：未发现历史日记，将生成 3 篇测试日记
+  ✅ 测试日记 2026-07-14: 今天主人和我说了...
+  ✅ 测试日记 2026-07-15: ...
+日记自检通过 ✅ 日记功能正常工作（共 3 篇）
+```
 
 ---
 
@@ -334,7 +379,7 @@ pip install git+https://github.com/openai/CLIP.git
 | 模块 | 函数 | 说明 |
 |------|------|------|
 | `db.py` | `init_db_pool()` | 初始化数据库连接池（5~20 连接），支持自动重连 |
-| `db.py` | `ensure_tables()` | 自动创建 8 张表，检查并迁移 token 字段 |
+| `db.py` | `ensure_tables()` | 自动创建 9 张表，检查并迁移 token 字段 |
 | `db.py` | `get/set_api_key()` | 读取/更新 API 密钥 |
 | `db.py` | `add/load/clear_memory()` | 对话记忆的增删查 |
 | `db.py` | `add/load_keywords()` | 全局关键词的增查（最多 40 个） |
@@ -355,15 +400,22 @@ pip install git+https://github.com/openai/CLIP.git
 | `memory.py` | `save_chat_to_db()` | 保存对话到数据库 + 更新内存 |
 | `memory.py` | `build_memory_context()` | 构建提示词中的对话历史上下文 |
 | `api.py` | `get_character_reply()` | 双模型调用核心函数（DS→豆包→兜底） |
+| `diary.py` | `generate_diary()` | 生成指定日期日记（查库→查缓存→AI生成→保存） |
+| `diary.py` | `get_diary_from_db()` | 从 diaries 表查询已保存的日记 |
+| `diary.py` | `save_diary_to_db()` | 保存日记到 diaries 表（已存在则更新） |
+| `diary.py` | `get_events_by_date()` | 查询指定日期的所有事件记录 |
+| `diary.py` | `get_dialogs_by_date()` | 查询指定日期的 AI 调用记录（对话素材） |
+| `diary.py` | `get_raw_events_text()` | 查看指定日期的原始事件记录文本 |
+| `diary.py` | `get_diary_overview()` | 生成最近几天日记概览（含状态标记） |
 | `send.py` | `send_short_reply()` | 发送 AI 回复（文本+动作+图片） |
 | `send.py` | `send_private_msg/group_msg()` | WebSocket 发送单条消息 |
 | `send.py` | `make_image_msg()` | 构建 NapCat 图片消息格式 |
-| `commands.py` | `handle_command()` | 处理 ! 前缀命令入口 |
-| `schedule.py` | `schedule_loop()` | 定时任务主循环 |
+| `commands.py` | `handle_command()` | 处理 ! 前缀命令入口（含日记命令） |
+| `schedule.py` | `schedule_loop()` | 定时任务主循环（含凌晨3点自动写日记） |
 | `handler.py` | `handle_qq_message()` | QQ 消息处理入口 |
 | `api_server.py` | `run_api_server()` | 启动 HTTP API 服务器 |
 | `heartbeat.py` | `heartbeat_monitor()` | 通用心跳监控协程 |
-| `main.py` | `main()` | 主启动函数 |
+| `run.py` | `check_diary()` | v4.0 新增：日记功能启动追溯自检 |
 
 ---
 
@@ -374,7 +426,7 @@ pip install git+https://github.com/openai/CLIP.git
 | 文件 | 说明 | 注释风格 |
 |------|------|---------|
 | `botv/config.py` | 配置常量 + 全局运行时变量 | ✅ 模块注释 + 行内注释 |
-| `botv/db.py` | 数据库连接池、建表、CRUD 操作（8张表） | ✅ 模块注释 + 函数文档 + 行内注释 |
+| `botv/db.py` | 数据库连接池、建表、CRUD 操作（9张表） | ✅ 模块注释 + 函数文档 + 行内注释 |
 | `botv/log.py` | 日志系统（控制台 + MySQL 双写，五级日志） | ✅ 模块注释 + 函数文档 |
 | `botv/utils.py` | 通用工具函数（下载、base64编码、AI回复五行格式解析） | ✅ 模块注释 + 函数文档 + 行内注释 |
 | `botv/clip.py` | CLIP 模型加载（ViT-B/32 CPU）与图片多标签分析 | ✅ 模块注释 + 函数文档 + 行内注释 |
@@ -383,9 +435,10 @@ pip install git+https://github.com/openai/CLIP.git
 | `botv/personality.py` | 人设系统（本地基础人设 + 远程/本地补充 + 600个候选标签分类） | ✅ 模块注释 + 函数文档 + 行内注释 |
 | `botv/memory.py` | 对话记忆与关键词管理（jieba分词、数据库CRUD、上下文构建） | ✅ 模块注释 + 函数文档 + 行内注释 |
 | `botv/api.py` | DeepSeek + 豆包 双模型调用（异步重试、原始JSON保存、自动关键词补全） | ✅ 模块注释 + 函数文档 + 行内注释 |
+| `botv/diary.py` | AI 日记系统（v4.0 新增：素材收集→AI生成→缓存→数据库持久化） | ✅ 模块注释 + 函数文档 + 行内注释 |
 | `botv/send.py` | 消息发送与选图策略（五行解析→文本+动作+图片→WebSocket发送） | ✅ 模块注释 + 函数文档 + 行内注释 |
-| `botv/commands.py` | ! 命令系统（22个命令：help/status/task/memory/sticker/clip等） | ✅ 模块注释 + 函数文档 + 行内注释 |
-| `botv/schedule.py` | 定时任务 + 工作日判断（7个场景、chinesecalendar、闲聊、生日祝福） | ✅ 模块注释 + 函数文档 + 行内注释 |
+| `botv/commands.py` | ! 命令系统（26个命令：help/status/task/memory/sticker/clip/diary等） | ✅ 模块注释 + 函数文档 + 行内注释 |
+| `botv/schedule.py` | 定时任务 + 工作日判断（7个场景、chinesecalendar、闲聊、生日祝福、自动写日记） | ✅ 模块注释 + 函数文档 + 行内注释 |
 | `botv/heartbeat.py` | WebSocket 心跳保活（通用协程，每15秒ping） | ✅ 模块注释 + 函数文档 + 行内注释 |
 | `botv/handler.py` | QQ 消息处理主循环（消息解析→命令/表情包/AI回复→发送） | ✅ 模块注释 + 函数文档 + 行内注释 |
 | `botv/api_server.py` | HTTP API 服务器（端口60908，Bearer Token认证，8个接口） | ✅ 模块注释 + 函数文档 + 行内注释 |
@@ -398,16 +451,43 @@ pip install git+https://github.com/openai/CLIP.git
 
 | 注释类型 | 格式 | 示例 |
 |---------|------|------|
-| **模块级注释** | `# ===================== 模块名 =====================` + 功能说明 | `# ===================== 配置模块 =====================` |
+| **模块级注释** | `# ===================== 模块名 =====================` + 功能说明 | `# ===================== 日记模块 =====================` |
 | **函数文档字符串** | `"""功能说明"""`（单行）或带参数说明的多行 | `def log_system(m): """系统级日志"""` |
 | **行内注释** | `# 说明`（与代码保持2个空格间隔） | `CST = timezone(timedelta(hours=8))  # 东八区（北京时间）` |
-| **代码块分隔** | `# ===================== 标题 =====================` | `# ===================== 配置常量 =====================` |
-| **全局变量注释** | `# 说明`（与变量同行） | `active_ws_qq=None  # 当前活跃的QQ WebSocket连接` |
+| **代码块分隔** | `# ===================== 标题 =====================` | `# ===================== 数据库操作 =====================` |
+| **全局变量注释** | `# 说明`（与变量同行） | `_diary_cache = {}  # 日记缓存 {key: (生成时间, 日记内容)}` |
+
+---
+
+## v4.0 更新日志
+
+### 🆕 AI 日记系统
+- 新增 `botv/diary.py` 模块：从 `events` 表事件 + `ai_raw_responses` 对话素材生成奈绪视角日记
+- 双模型支持（DeepSeek → 豆包降级），缓存 10 分钟，持久化到 `diaries` 表
+- 4 个日记查看命令：`!diary`、`!diary <日期>`、`!diary list [天数]`、`!diary raw <日期>`
+
+### 🚀 启动追溯自检
+- `run.py` 新增 `check_diary()`：空日记表时自动追溯最近 7 天有事件记录的日期
+- **上线消息发出 10 分钟后再执行追溯**（`asyncio.sleep(600)`），确保 API 密钥已从数据库加载完成，避免生成假日记
+- 调用 AI 生成最多 3 篇测试日记并写入数据库，验证日记功能正常工作
+- 日常日记仅在凌晨 3 点由定时任务自动生成，启动追溯仅做历史补录
+
+### 🔧 API 密钥加载顺序修复
+- `main.py` 中 `reload_api_keys()` 调整到 `load_memories()` **之前**执行，确保任何时候触发日记生成时 API 密钥都已就绪
+- `api.py` 的 `call_deepseek()` / `call_doubao()` 新增 `target_id` 参数，日记场景下不再依赖从消息中提取 target_id（此前会截断导致 `Data too long` 报错）
+- `diary.py` 调用 AI 时显式传入真实 `target_id`，避免 `_extract_target_id` 取消息前 80 字符导致超长
+- `db.py` 的 `save_ai_raw_response()` 对 `target_id` 做防御性截断（50 字符），防止数据库写超限
+
+### ⏰ 定时任务扩展
+- 凌晨 3 点自动为昨天生成日记（不主动推送，用 `!diary` 随时查看）
+
+### 📚 命令系统扩充
+- 命令数从 22 个扩展到 **26 个**（新增 4 个日记命令）
 
 ---
 
 ## 写在最后
 - 目前该程序已在 **联想小新 Air14 2018（Intel 8250U + MX150 + 16G）** 上成功运行，CLIP CPU 推理单张图片约 1~3 秒。因为cpu比较老旧，从拿到消息，到api回复几毫秒，但是对于图片处理，仍需1min左右，由于没有的对照的部署，仍未知其是哪里拖慢了发送解析。
 - 人设、定时任务时间、API 端点、数据库配置等均可按需修改（`botv/config.py`）。
-- 运行文件：**`run.py`**（模块化版），旧版单文件 **`botv.py`**（v1.x，包含所有函数和运行逻辑）已归档保留。
+- 运行文件：**`run.py`**（模块化版，v4.0 含日记追溯自检，上线 10 分钟后执行），旧版单文件 **`botv.py`**（v1.x，包含所有函数和运行逻辑）已归档保留。
 - 所有代码文件均已添加统一风格的逐行中文注释，便于二次开发和维护。

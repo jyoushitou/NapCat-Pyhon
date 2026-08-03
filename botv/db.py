@@ -128,7 +128,7 @@ def save_ai_raw_response(model_name, user_msg, raw_response_json, response_text,
             user_msg[:500],  # 用户消息（截断）
             json.dumps(raw_response_json, ensure_ascii=False),  # 完整JSON
             response_text[:1000] if response_text else '',  # 提取的文本
-            target_id,  # 对话目标ID
+            (target_id or "")[:50],  # 对话目标ID（截断防超长）
             status,  # 状态
             datetime.now(CST).strftime('%Y-%m-%d %H:%M:%S'),  # 创建时间
             prompt_tokens,  # 输入token数
