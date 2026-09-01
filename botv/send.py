@@ -47,12 +47,13 @@ def select_best_sticker(uid, ctx=""):
 
 async def build_reply_message(txt, uid, kws=None):
     """构建回复消息列表：解析AI回复→文本+动作+图片，返回[(类型, 内容), ...]
-    目标：AI回复的三行（第一行对话/第二行动作/第三行关键词）→ 三条独立QQ消息（三个气泡）"""
+        目标：AI回复只输出角色剧情内容（第一行对话+第二行动作）→ 两条独立QQ消息（两个气泡）+ 一张表情包
+        标签、摘要、关键词仅用于内部搜图处理，禁止输出到对话"""
     dialog, action, img_kw, event, refined_kw = parse_ai_reply(txt)  # 解析AI回复
     log_api(f"[构建回复] dialog={dialog[:30]}, action={action[:20]}, img_kw={img_kw}")  # 日志记录
     parts = []  # 消息片段列表
 
-    # ★ 不依赖 dialog 拼接结果（parse_ai_reply 可能将无标记行拼入 dialog）
+        # ★ 不依赖 dialog 拼接结果（parse_ai_reply 可能将无标记行拼入 dialog）
     # 直接从原始文本拆出每一行 → 每一行 = 一条独立QQ消息（一个气泡）
     raw_lines = [l.strip() for l in txt.split('\n') if l.strip()]  # 去除空行后的所有行
 
@@ -61,20 +62,18 @@ async def build_reply_message(txt, uid, kws=None):
         parts.append(("text", [{"type":"text","data":{"text":raw_lines[0]}}]))  # 气泡1
         log_api(f"[构建回复] 气泡1(对话): {raw_lines[0][:30]}")
 
-    # 第二行：动作描写 → 独立消息（气泡2）
-    if len(raw_lines) >= 2 and raw_lines[1]:
+    # 第二行：动作描写 → 独立消息（气泡2），仅当以（或(开头才输出（否则视为内部元数据跳过）
+    if len(raw_lines) >= 2 and raw_lines[1] and (raw_lines[1].startswith("（") or raw_lines[1].startswith("(")):
         parts.append(("text", [{"type":"text","data":{"text":raw_lines[1]}}]))  # 气泡2
         log_api(f"[构建回复] 气泡2(动作): {raw_lines[1][:30]}")
+    elif len(raw_lines) >= 2 and raw_lines[1]:
+        log_api(f"[构建回复] 第二行非动作({raw_lines[1][:20]})，按内部元数据跳过输出")
 
-    # 第三行及之后：关键词/其它内容 → 逐行独立消息（气泡3+）
-    for extra_line in raw_lines[2:]:
-        # 跳过带前缀标记的行（那些已在parse_ai_reply中单独识别为img_kw/event/refined_kw）
-        if extra_line.startswith("关键词搜索图片用") or extra_line.startswith("事件摘要") or extra_line.startswith("关键词提炼"):
-            continue
-        if not extra_line:
-            continue
-        parts.append(("text", [{"type":"text","data":{"text":extra_line}}]))  # 气泡3+
-        log_api(f"[构建回复] 气泡{len(parts)}(关键词/其他): {extra_line[:30]}")
+    # 第三行及之后：标签、摘要、关键词提炼等内部元数据 → 仅用于内部搜图，禁止输出
+    # 只输出角色剧情内容（对话+动作），后跟表情包
+    internal_lines = raw_lines[2:]
+    if internal_lines:
+        log_api(f"[构建回复] 截留{len(internal_lines)}行内部元数据(关键词/事件摘要/关键词提炼)，禁止输出")
     
     # 代码模式：只发送文字不发送图片，保证完整详细的技术回答
     if cfg.CODE_MODE:

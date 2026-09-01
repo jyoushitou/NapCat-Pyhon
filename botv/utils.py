@@ -92,6 +92,9 @@ def parse_ai_reply(ans):
             # 动作描写行（以括号开头），只取第一个动作行
             if not action:
                 action = line
+        elif any(m in line for m in ("标签", "摘要", "关键词", "提炼", "事件")):
+            # 内部元数据拦截：含内部标记词的行禁止混入对话
+            log_api(f"[parse_ai_reply] 拦截内部元数据行: {line[:30]}")
         else:
             # 纯关键词行判断（如：睡觉,躺平,抱抱 — 无"关键词搜索图片用"前缀）
             # 特征：含逗号/顿号分隔，不含语句标点（。！？和括号），词数>=2
