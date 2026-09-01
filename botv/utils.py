@@ -59,6 +59,9 @@ def parse_ai_reply(ans):
         return "嗯嗯", "", [], "", []
     # 清理AI回复中的特殊标记（[sticker]等），避免被当作文本发送
     cleaned = ans.replace("[sticker]", "").replace("[Sticker]", "").replace("[STICKER]", "").strip()
+    # 剥离"第一行：""第二行："等行号前缀，AI偶尔会把内部标记原样输出
+    import re as _re_strip
+    cleaned = _re_strip.sub(r"^[第]{0,1}[一二三四五六七八九十0-9]{1,3}[行]：[\s　]*", "", cleaned, flags=_re_strip.MULTILINE)
     lines = [l.strip() for l in cleaned.split('\n') if l.strip()]
     if not lines:  # 清理后没有内容
         return "嗯嗯", "", [], "", []
@@ -81,7 +84,8 @@ def parse_ai_reply(ans):
             img_kw = [k.strip() for k in kw_part.replace("，"," ").replace(","," ").replace("、"," ").replace("　"," ").replace("  "," ").split() if k.strip()]
             found_img_tag = True
         elif "事件摘要" in line:
-            event = line.split("：")[-1].split(":")[-1].strip()
+            # 取第一个冒号后的内容（避免多个冒号时取到标签部分），并截断管道符后的标签
+            event = line.split("：", 1)[-1].split(":", 1)[-1].strip()
             if "|" in event:
                 event = event.split("|")[0].strip()
         elif "关键词提炼" in line:

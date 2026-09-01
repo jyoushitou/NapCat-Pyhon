@@ -53,21 +53,33 @@ async def build_reply_message(txt, uid, kws=None):
     log_api(f"[构建回复] dialog={dialog[:30]}, action={action[:20]}, img_kw={img_kw}")  # 日志记录
     parts = []  # 消息片段列表
 
-        # ★ 不依赖 dialog 拼接结果（parse_ai_reply 可能将无标记行拼入 dialog）
+    # ★ 不依赖 dialog 拼接结果（parse_ai_reply 可能将无标记行拼入 dialog）
     # 直接从原始文本拆出每一行 → 每一行 = 一条独立QQ消息（一个气泡）
     raw_lines = [l.strip() for l in txt.split('\n') if l.strip()]  # 去除空行后的所有行
+
+    # 剥离可能的行号前缀（"第一行：""第二行："等），AI可能错误输出这些内部标记
+    import re as _re
+    def _strip_line_prefix(l):
+        return _re.sub(r"^[第]{0,1}[一二三四五六七八九十0-9]{1,3}[行]：[\s　]*", "", l)
+    raw_lines = [_strip_line_prefix(l) for l in raw_lines]
 
     # 第一行：对话内容 → 独立消息（气泡1）
     if len(raw_lines) >= 1 and raw_lines[0]:
         parts.append(("text", [{"type":"text","data":{"text":raw_lines[0]}}]))  # 气泡1
         log_api(f"[构建回复] 气泡1(对话): {raw_lines[0][:30]}")
 
-    # 第二行：动作描写 → 独立消息（气泡2），仅当以（或(开头才输出（否则视为内部元数据跳过）
-    if len(raw_lines) >= 2 and raw_lines[1] and (raw_lines[1].startswith("（") or raw_lines[1].startswith("(")):
-        parts.append(("text", [{"type":"text","data":{"text":raw_lines[1]}}]))  # 气泡2
-        log_api(f"[构建回复] 气泡2(动作): {raw_lines[1][:30]}")
-    elif len(raw_lines) >= 2 and raw_lines[1]:
-        log_api(f"[构建回复] 第二行非动作({raw_lines[1][:20]})，按内部元数据跳过输出")
+    # 第二行：动作描写 → 独立消息（气泡2）
+    # 严格固定结构：对话 → 动作 → 表情包，动作消息不允许缺失。
+    # 若第二行缺失或是内部元数据（AI漏写动作行），自动补（无）兜底。
+    _action_line = raw_lines[1] if len(raw_lines) >= 2 else ""
+    _is_internal = _action_line.startswith(("关键词", "事件", "标签", "摘要", "动作", "描述", "提炼", "回复格式"))
+    if _action_line and not _is_internal:
+        parts.append(("text", [{"type":"text","data":{"text":_action_line}}]))  # 气泡2
+        log_api(f"[构建回复] 气泡2(动作): {_action_line[:30]}")
+    else:
+        # AI漏写动作行 → 兜底补（无），保证动作消息永不缺失
+        parts.append(("text", [{"type":"text","data":{"text":"（无）"}}]))  # 气泡2兜底
+        log_api(f"[构建回复] 气泡2(动作)缺失({_action_line[:20]})，兜底补（无）")
 
     # 第三行及之后：标签、摘要、关键词提炼等内部元数据 → 仅用于内部搜图，禁止输出
     # 只输出角色剧情内容（对话+动作），后跟表情包
