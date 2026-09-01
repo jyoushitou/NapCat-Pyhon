@@ -46,14 +46,35 @@ def select_best_sticker(uid, ctx=""):
 
 
 async def build_reply_message(txt, uid, kws=None):
-    """构建回复消息列表：解析AI回复→文本+动作+图片，返回[(类型, 内容), ...]"""
-    dialog, action, img_kw, event, refined_kw = parse_ai_reply(txt)  # 解析AI回复的五行格式
+    """构建回复消息列表：解析AI回复→文本+动作+图片，返回[(类型, 内容), ...]
+    目标：AI回复的三行（第一行对话/第二行动作/第三行关键词）→ 三条独立QQ消息（三个气泡）"""
+    dialog, action, img_kw, event, refined_kw = parse_ai_reply(txt)  # 解析AI回复
     log_api(f"[构建回复] dialog={dialog[:30]}, action={action[:20]}, img_kw={img_kw}")  # 日志记录
     parts = []  # 消息片段列表
-    if dialog:  # 有对话内容
-        parts.append(("text", [{"type":"text","data":{"text":dialog}}]))  # 添加文本消息
-    if action:  # 有动作描述
-        parts.append(("text", [{"type":"text","data":{"text":action}}]))  # 添加动作文本
+
+    # ★ 不依赖 dialog 拼接结果（parse_ai_reply 可能将无标记行拼入 dialog）
+    # 直接从原始文本拆出每一行 → 每一行 = 一条独立QQ消息（一个气泡）
+    raw_lines = [l.strip() for l in txt.split('\n') if l.strip()]  # 去除空行后的所有行
+
+    # 第一行：对话内容 → 独立消息（气泡1）
+    if len(raw_lines) >= 1 and raw_lines[0]:
+        parts.append(("text", [{"type":"text","data":{"text":raw_lines[0]}}]))  # 气泡1
+        log_api(f"[构建回复] 气泡1(对话): {raw_lines[0][:30]}")
+
+    # 第二行：动作描写 → 独立消息（气泡2）
+    if len(raw_lines) >= 2 and raw_lines[1]:
+        parts.append(("text", [{"type":"text","data":{"text":raw_lines[1]}}]))  # 气泡2
+        log_api(f"[构建回复] 气泡2(动作): {raw_lines[1][:30]}")
+
+    # 第三行及之后：关键词/其它内容 → 逐行独立消息（气泡3+）
+    for extra_line in raw_lines[2:]:
+        # 跳过带前缀标记的行（那些已在parse_ai_reply中单独识别为img_kw/event/refined_kw）
+        if extra_line.startswith("关键词搜索图片用") or extra_line.startswith("事件摘要") or extra_line.startswith("关键词提炼"):
+            continue
+        if not extra_line:
+            continue
+        parts.append(("text", [{"type":"text","data":{"text":extra_line}}]))  # 气泡3+
+        log_api(f"[构建回复] 气泡{len(parts)}(关键词/其他): {extra_line[:30]}")
     
     # 代码模式：只发送文字不发送图片，保证完整详细的技术回答
     if cfg.CODE_MODE:
@@ -149,7 +170,7 @@ async def send_short_reply(tid, text, ws, uid, is_group=False, kws=None):
             await send_group_msg(tid, msg, ws)  # 发送群消息
         else:  # 私聊
             await send_private_msg(tid, msg, ws)  # 发送私聊消息
-        await asyncio.sleep(0.5)  # 每条间隔0.5秒，避免刷屏
+        await asyncio.sleep(2.0)  # 每条间隔2秒，确保QQ识别为独立消息，一条一条发
     log_send(f"回复:{text[:40]}")  # 日志记录发送
 
 

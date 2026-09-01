@@ -42,6 +42,7 @@ def check_and_install(package_name, optional=False):
     
     try:
         importlib.import_module(import_name)  # 尝试导入
+        print(f"{package_name}导入成功")
         return True  # 已安装
     except ImportError:
         pass  # 未安装，继续安装流程
@@ -124,15 +125,17 @@ def check_all_dependencies():
     for pkg in REQUIRED_PACKAGES:
         if not check_and_install(pkg, optional=False):
             all_ok = False  # 任一必需依赖失败 → 标记
+        else :
+            print(f"必需的软件包：{pkg} 存在！",end=" ")
     
-    print()
+    print(" ")
     
     # 检查可选依赖
     print("📦 可选依赖（不影响基础功能）：")
     for pkg in OPTIONAL_PACKAGES:
         check_and_install(pkg, optional=True)  # 可选失败不影响 all_ok
     
-    print()
+    print(" ")
     
     if all_ok:
         print("✅ 所有必需依赖已就绪，启动机器人...")

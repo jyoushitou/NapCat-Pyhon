@@ -93,8 +93,20 @@ def parse_ai_reply(ans):
             if not action:
                 action = line
         else:
-            # 没有标记的普通行，且不是动作行，收集为额外对话
-            extra_dialogs.append(line)
+            # 纯关键词行判断（如：睡觉,躺平,抱抱 — 无"关键词搜索图片用"前缀）
+            # 特征：含逗号/顿号分隔，不含语句标点（。！？和括号），词数>=2
+            import re
+            if re.search(r"[，,、]", line) and not re.search(r"[。！？!?；;：:（()）]", line):
+                tokens = [k.strip() for k in line.replace("，"," ").replace(","," ").replace("、"," ").replace("　"," ").replace("  "," ").split() if k.strip()]
+                if len(tokens) >= 2:
+                    # 纯关键词行 → 作为图片搜索关键词，不并入对话
+                    img_kw = tokens
+                    found_img_tag = True  # 标记已找到关键词行，避免第三行兜底重复解析
+                else:
+                    extra_dialogs.append(line)
+            else:
+                # 没有标记的普通行，且不是动作行，收集为额外对话
+                extra_dialogs.append(line)
     
     # 如果没有找到带标记的关键词行，尝试用第三行兜底
     if not found_img_tag and len(lines) > 2:
