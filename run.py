@@ -81,8 +81,8 @@ def check_and_install(package_name, optional=False):
                 return True
         except Exception:
             pass  # apt 失败，回退到 pip
-    
-                # ② apt 没有对应包或安装失败 → 回退到 pip install
+
+    # ② apt 没有对应包或安装失败 → 回退到 pip install
     # 使用 --break-system-packages 绕过 Ubuntu 24.04 的 PEP 668 限制
     # （Ubuntu 23.04+ 默认禁止 pip 直接安装到系统 Python）
     try:
@@ -98,7 +98,11 @@ def check_and_install(package_name, optional=False):
             stderr=subprocess.DEVNULL   # 丢弃错误输出
         )
         # 安装后再次验证，防止 pip 返回码为 0 但模块实际不可用
-        if importlib.util.find_spec(import_name) is None:
+
+        # 直接 import 验证（比 find_spec 更贴近真实导入结果，避免误判）
+        try:
+            importlib.import_module(import_name)
+        except Exception:
             raise ImportError(f"{package_name} 安装后验证失败：模块仍不可导入")
         print(f"  ✅ {package_name} 安装成功（pip）")
         return True
@@ -212,7 +216,7 @@ if __name__ == "__main__":  # 直接运行本文件时
     # 先检查依赖
     if not check_all_dependencies():
         sys.exit(1)  # 依赖缺失 → 退出
-        # 依赖检查通过后再导入主模块（延迟导入，避免依赖缺失时崩溃）
+    # 依赖检查通过后再导入主模块（延迟导入，避免依赖缺失时崩溃）
     from botv.main import main
     # 启动机器人（先运行主程序，上线消息发出10分钟后再追溯日记）
     async def _start():
