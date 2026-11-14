@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # ===================== 程序打包 =====================
 # 产出「能直接跑的 Python 程序包」，跟 .bundle（git 运输用）是两回事。
 #

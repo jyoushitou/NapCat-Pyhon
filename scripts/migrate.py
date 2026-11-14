@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """统一迁移入口（推荐部署第一步）
 
     python3 scripts/migrate.py            # 预览：还缺什么/有多少旧数据
